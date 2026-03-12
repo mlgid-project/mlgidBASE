@@ -2,6 +2,8 @@ from mlgiddetect.inference import Inference
 from mlgiddetect.configuration import Config
 from mlgiddetect.preprocessing import standard_preprocessing
 from mlgiddetect.postprocessing import standard_postprocessing
+from mlgiddetect.preprocessing import (preprocess_geometry, contrast_correction, add_batch_and_color_channel,
+                                        grayscale_to_color)
 from mlgiddetect.dataloader import PyGIDDataset
 from mlgiddetect.dataloader import ImageContainer
 import numpy as np
@@ -39,8 +41,6 @@ def check_valid_config(config):
     config.MODEL_TYPE == 'faster_rcnn'
     return config
 
-
-
 def run_mlgiddetect(img, q_xy_axes,q_z_axes, imp, config_detect):
     try:
         img_container_detect = ImageContainer()
@@ -71,17 +71,35 @@ def run_mlgiddetect(img, q_xy_axes,q_z_axes, imp, config_detect):
     return img_container_detect
 
 
+def standard_preprocessing_from_polar(config, raw_polar_img):
+    equalized_polar, mask = contrast_correction(config, raw_polar_img)
+    equalized_polar = add_batch_and_color_channel(equalized_polar)
+    mask = add_batch_and_color_channel(mask)
 
-# def peaks2img_container(filename, entry, frame_num):
-#     detected_peaks = read_detected_peaks(filename, entry, frame_num)
-#     print("detected_peaks", detected_peaks)
-#     img_container_detect = ImageContainer()
-#     img_container_detect.radius = detected_peaks['radius']
-#     img_container_detect.radius_width = detected_peaks['radius_width']
-#     img_container_detect.angle = detected_peaks['angle']
-#     img_container_detect.angle_width = detected_peaks['angle_width']
-#     img_container_detect.scores = detected_peaks['scores']
-#
-#     raw_reciprocal, ai, wavelength, converted_polar_image, q_xy, q_z
+    # reshape for detr model
+    if config.MODEL_TYPE == 'detr':
+        equalized_polar = grayscale_to_color(equalized_polar)
+        equalized_polar = equalized_polar[:, :, :, :]
+        equalized_polar = np.pad(equalized_polar, ((0, 0), (0, 0,), (0, 832), (0, 0)))
+
+    return equalized_polar, raw_polar_img, mask
 
 
+def run_mlgiddetect_from_polar(img, imp, config_detect):
+    img_container_detect = ImageContainer()
+    img_container_detect.config = config_detect
+    # img_container_detect.q_xy = q_xy
+    # img_container_detect.q_z = q_z
+    img_container_detect.nr = 0
+    img_container_detect.polar_img_shape = img.shape
+    (
+        img_container_detect.converted_polar_image,
+        img_container_detect.raw_polar_image,
+        img_container_detect.converted_mask,
+    ) = standard_preprocessing_from_polar(img_container_detect.config, img)
+    raw_results = imp.infer(img_container_detect)
+    img_container_detect = standard_postprocessing(
+        img_container_detect, raw_results
+    )
+    img_container_detect.split_polar_images = None
+    return img_container_detect

@@ -15,7 +15,7 @@ def run_pygidfit_from_file(filename, entry, frame_num,
                                  use_pool=use_pool, debug=debug, multiprocessing=multiprocessing)
     return
 
-def run_pygidfit_from_memory(img_container_detect, wavelength, q_xy_max, q_z_max, ang_deg_max,
+def run_pygidfit_from_memory(img_container_detect, wavelength, q_xy_max, q_z_max, q_abs_max, ang_deg_max,
                              ratio_threshold, clustering_distance_peaks,
                              clustering_distance_rings,
                              clustering_extend,
@@ -26,7 +26,7 @@ def run_pygidfit_from_memory(img_container_detect, wavelength, q_xy_max, q_z_max
     angle = img_container_detect.angle
     angle_width = img_container_detect.angle_width
     img_container, peaks_pool = pygidfit.fit_data(polar_img, radius, radius_width, angle, angle_width, wavelength,
-                      q_xy_max, q_z_max, ang_deg_max, ratio_threshold, clustering_distance_peaks,
+                      q_xy_max, q_z_max, q_abs_max, ang_deg_max, ratio_threshold, clustering_distance_peaks,
                       clustering_distance_rings, clustering_extend, debug, multiprocessing, peaks_pool)
     img_container.visibility = [0] * len(radius_width)
     img_container.score = img_container_detect.scores

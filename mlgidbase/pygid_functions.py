@@ -1,8 +1,8 @@
 import pygid
 from h5py import File
 import numpy as np
-
-
+from importlib.metadata import version
+from datetime import datetime
 
 def save_pipeline(conversion, img_container_detect_list,
                       img_container_fit_list, container_matched_list,
@@ -14,6 +14,25 @@ def save_pipeline(conversion, img_container_detect_list,
                     img_container_detect = img_container_detect_list,
                     img_container_fit = img_container_fit_list,
                     container_matched = container_matched_list)
+
+def det2pol_gid_pygid(conversion):
+    dq, dang = calc_dq_dang(conversion)
+    return conversion.det2pol_gid(plot_result=False,
+                           return_result=True,
+                           save_result=False,
+                           dq=dq, dang=dang)
+
+def det2q_gid_pygid(conversion, dq):
+    conversion.det2q_gid(plot_result=False,
+                           return_result=False,
+                           save_result=False,
+                           dq=dq)
+
+def calc_dq_dang(conversion):
+    radial_range = conversion.matrix[0].radial_range
+    q = np.linspace(0, radial_range[-1], 1025)
+    ang = np.linspace(0, 90, 513)
+    return q[1]-q[0], ang[1]-ang[0]
 
 def save_detect(filename, entry, frame_num, img_container_detect):
     with File(filename, "r+") as f:
@@ -29,6 +48,11 @@ def save_fit(filename, entry, frame_num, img_container_fit):
 def save_match(filename, entry, frame_num, container_matched):
     with File(filename, "r+") as f:
         group_name = f"/{entry}/data/analysis/frame{str(frame_num).zfill(5)}"
+        process_metadata = {'entry':entry,
+                            'frame_num':frame_num,
+                            'program': 'mlgidmatch',
+                            'version': version("mlgidmatch"),
+                            'date': datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')}
         pygid._save_matched_data(f, group_name, container_matched)
         return
 

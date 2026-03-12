@@ -80,7 +80,8 @@ conversion = pygid.Conversion(
     frame_num=frame_num
 )
 
-conversion.det2q_gid(save_result=False)
+# don't run the conversion. It will be done inside. 
+# conversion.det2q_gid(save_result=False)
 
 analysis = mlgidBASE(pygid_conversion=conversion)
 ```

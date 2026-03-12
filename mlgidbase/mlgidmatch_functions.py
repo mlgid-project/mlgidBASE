@@ -92,7 +92,7 @@ def solution2container(unique_solutions):
 
     for sol_idx in unique_solutions.keys():
         unique_solution = unique_solutions[sol_idx]
-        field_name = f"matched_{peaks_type}_{sol_idx}"
+        field_name = f"matched_{peaks_type}_{sol_idx:04d}"
         number_of_structs = len(unique_solution)
 
         names = [struct_data['cif'] for struct_data in unique_solution]

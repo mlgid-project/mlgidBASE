@@ -2,12 +2,10 @@ from mlgiddetect.inference import Inference
 from mlgiddetect.configuration import Config
 from mlgiddetect.preprocessing import standard_preprocessing
 from mlgiddetect.postprocessing import standard_postprocessing
-from mlgiddetect.preprocessing import (preprocess_geometry, contrast_correction, add_batch_and_color_channel,
+from mlgiddetect.preprocessing import (contrast_correction, add_batch_and_color_channel,
                                         grayscale_to_color)
-from mlgiddetect.dataloader import PyGIDDataset
 from mlgiddetect.dataloader import ImageContainer
 import numpy as np
-from .pygid_functions import read_detected_peaks
 
 def load_config(config):
     if isinstance(config, Config):

@@ -1,10 +1,12 @@
 import numpy as np
+import os
 from typing import List, Any, Optional
 import logging
 
 import pygid
-from .pygid_functions import check_valid_conversion, save_detect, get_entry_dict, \
-    read_conversion_from_nexus, save_fit, save_match, read_detected_peaks, save_pipeline, det2pol_gid_pygid, det2q_gid_pygid
+from .pygid_functions import (check_valid_conversion, save_detect, get_nexus, \
+    read_conversion_from_nexus, save_fit, save_match, read_detected_peaks, read_fitted_peaks, read_matched_data, \
+                              save_pipeline, det2pol_gid_pygid, det2q_gid_pygid)
 from .mlgiddetect_functions import load_config, run_mlgiddetect, load_inference, run_mlgiddetect_from_polar
 from .pygidfit_functions import  run_pygidfit_from_file, run_pygidfit_from_memory
 from .mlgidmatch_functions import load_cif_prepr, run_mlgidmatch_from_file, solution2container, set_match_class, \
@@ -47,6 +49,7 @@ class mlgidBASE:
         self.exp_metadata = exp_metadata
 
         self.from_nexus: Optional[bool] = None
+        self.nexus: Any = None
         self.entry_dict: Any = None
 
         self.img_container_detect_list = None
@@ -82,7 +85,8 @@ class mlgidBASE:
             self.q_xy = self.pygid_conversion.matrix[0].q_xy
             self.q_z = self.pygid_conversion.matrix[0].q_xy
         if self.filename is not None:
-            self.entry_dict = get_entry_dict(self.filename)
+            self.nexus = get_nexus(self.filename)
+            self.entry_dict = self.nexus.entry_dict
             self.from_nexus = True
 
     def run_detection(self, entry = None, frame_num = None, config_detect = None):
@@ -143,7 +147,7 @@ class mlgidBASE:
         self._run_detection_single_frame(entry, frame_num)
 
     def _run_detection_single_frame(self, entry, frame_num):
-        conversion = read_conversion_from_nexus(self.filename, entry, frame_num)
+        conversion = read_conversion_from_nexus(self.nexus, entry, frame_num)
 
         img_container_detect = run_mlgiddetect(conversion.img_gid_q[0], conversion.matrix[0].q_xy, conversion.matrix[0].q_z,
                          self.imp_detect, self.config_detect)
@@ -186,7 +190,8 @@ class mlgidBASE:
 
         if self.img_container_detect_list is None:
             raise ValueError("img_container_detect_list is not defined. Call run_detection before run_fitting")
-        for img_container_detect in self.img_container_detect_list:
+        for i, img_container_detect in enumerate(self.img_container_detect_list):
+            img_container_detect.converted_polar_image = self.img_pol[i]
             img_container_fit, peaks_pool = run_pygidfit_from_memory(img_container_detect = img_container_detect,
                                      wavelength = wavelength, q_xy_max = np.nanmax(q_xy), q_z_max = np.nanmax(q_z),
                                      ang_deg_max = ang_deg_max, q_abs_max = np.nanmax(self.q_abs),
@@ -202,8 +207,9 @@ class mlgidBASE:
 
 
     def run_matching(self, entry = None, frame_num = None, cif_prepr=None,
-                     threshold=0.5, peaks_type='segments', device='cpu', save_result=False):
-
+                     probability_threshold=0.5, peaks_type='segments', device='cpu', intensity_threshold = 0, threshold=None):
+        if threshold:
+            probability_threshold = threshold
         if cif_prepr is not None:
             if self.cif_prepr is not None:
                 self.logger.info(f"cif_prepr is already set. The previous cif_prepr is to be used")
@@ -215,22 +221,23 @@ class mlgidBASE:
         if not self.from_nexus:
             if frame_num !=1 and not frame_num is None:
                 self.logger.warning("frame_num will be ignored.")
-            self.run_matching_from_memory(threshold, peaks_type)
+            self.run_matching_from_memory(probability_threshold, peaks_type, intensity_threshold)
         else:
-            self.run_matching_from_file(entry, frame_num, threshold, peaks_type)
+            self.run_matching_from_file(entry, frame_num, probability_threshold, peaks_type, intensity_threshold)
 
-    def run_matching_from_memory(self, threshold, peaks_type):
+    def run_matching_from_memory(self, threshold, peaks_type, int_min):
         self.container_match_list = []
-
         if self.img_container_fit_list is None:
             raise ValueError("img_container_fit_list is not defined. Call run_fitting before run_fitting")
         for frame_num, img_container_fit in enumerate(self.img_container_fit_list):
+            amplitude = img_container_fit.amplitude
+            int_mask = amplitude > int_min
             q_xy_max = np.nanmax(img_container_fit.q_xy)
             q_z_max = np.nanmax(img_container_fit.q_z)
-            is_ring = img_container_fit.is_ring
-            amplitude = img_container_fit.amplitude
-            q_z = img_container_fit.qzqxyboxes[0]
-            q_xy = img_container_fit.qzqxyboxes[1]
+            is_ring = img_container_fit.is_ring[int_mask]
+            amplitude = img_container_fit.amplitude[int_mask]
+            q_z = img_container_fit.qzqxyboxes[0][int_mask]
+            q_xy = img_container_fit.qzqxyboxes[1][int_mask]
 
             mask = is_ring if peaks_type == 'rings' else ~is_ring
             intensity_roi = amplitude[mask]
@@ -247,29 +254,29 @@ class mlgidBASE:
             unique_solutions['peaks_type'] = peaks_type
             self.container_match_list.append(solution2container(unique_solutions))
 
-    def run_matching_from_file(self, entry, frame_num, threshold, peaks_type):
+    def run_matching_from_file(self, entry, frame_num, threshold, peaks_type, int_min):
         if entry is None:
             for entry in self.entry_dict:
-                self._run_matching_single_entry(entry, frame_num, threshold, peaks_type)
+                self._run_matching_single_entry(entry, frame_num, threshold, peaks_type, int_min)
             return
         if not entry in self.entry_dict:
             raise ValueError("entry not found in the NeXus file")
-        self._run_matching_single_entry(entry, frame_num, threshold, peaks_type)
+        self._run_matching_single_entry(entry, frame_num, threshold, peaks_type, int_min)
 
-    def _run_matching_single_entry(self, entry, frame_num, threshold, peaks_type):
+    def _run_matching_single_entry(self, entry, frame_num, threshold, peaks_type, int_min):
         frame_num_all = self.entry_dict[entry]['shape'][0]
         if frame_num is None:
             for frame_num in range(frame_num_all):
-                self._run_matching_single_frame(entry, frame_num, threshold, peaks_type)
+                self._run_matching_single_frame(entry, frame_num, threshold, peaks_type, int_min)
             return
         if frame_num >= frame_num_all:
             raise ValueError("frame_num is out of range")
-        self._run_matching_single_frame(entry, frame_num, threshold, peaks_type)
+        self._run_matching_single_frame(entry, frame_num, threshold, peaks_type, int_min)
 
-    def _run_matching_single_frame(self, entry, frame_num, threshold, peaks_type):
+    def _run_matching_single_frame(self, entry, frame_num, threshold, peaks_type, int_min):
 
-        unique_solutions = run_mlgidmatch_from_file(self.filename, entry, frame_num, self.match_class,
-                                                    threshold, peaks_type)
+        unique_solutions = run_mlgidmatch_from_file(self.nexus, entry, frame_num, self.match_class,
+                                                    threshold, peaks_type, int_min)
         if unique_solutions == {}:
             self.logger.info(f"No solutions for ({self.filename}, entry: {entry}, frame: {frame_num}) was found. "
                              f"Try to decrease threshold")
@@ -365,7 +372,9 @@ class mlgidBASE:
                                                'line_style': "--",
                                                'line_color': "bone",
                                                'plot': True},
-                              matched_params = {'plot_segments': True,
+                              matched_params = {
+                                               'solution': None,
+                                               'plot_segments': True,
                                                'marker':  ['o', 'o', 'o'],
                                                'marker_size': [50,50,50],
                                                'marker_facecolor': ["none", "none", "none"],
@@ -383,10 +392,12 @@ class mlgidBASE:
         if not self.from_nexus:
             if not entry is None:
                 self.logger.info(f"entry is ignored when analysis is from memory")
+            entry = 'entry_0000'
             self.plot_analysis_results_from_memory(
                 detected_params,
                 fitted_params,
                 matched_params,
+                entry,
                 frame_num,
                 return_result, plot_result,
                 clims, xlim, ylim,
@@ -397,7 +408,7 @@ class mlgidBASE:
                 detected_params,
                 fitted_params ,
                 matched_params,
-                frame_num, entry,
+                entry, frame_num,
                 return_result, plot_result,
                 clims, xlim, ylim,
                 save_fig, path_to_save_fig)
@@ -406,6 +417,7 @@ class mlgidBASE:
                 detected_params,
                 fitted_params,
                 matched_params,
+                entry,
                 frame_num,
                 return_result, plot_result,
                 clims, xlim, ylim,
@@ -459,7 +471,7 @@ class mlgidBASE:
                                       clims, xlim, ylim,
                                       save_fig, path_to_save_fig)
             else:
-                self.plot_single_frame(self.pygid_conversion.img_gid_q[num], self.q_xy, self.q_z,
+                self.plot_single_frame(self.pygid_conversion.img_gid_q[num], self.q_xy , self.q_z,
                                        detected_params,
                                        fitted_params,
                                        matched_params,
@@ -467,18 +479,138 @@ class mlgidBASE:
                                        clims, xlim, ylim,
                                        save_fig, path_to_save_fig)
 
-
     def plot_analysis_results_from_file(self,
                 detected_params,
                 fitted_params,
                 matched_params,
+                entry,
                 frame_num,
                 return_result, plot_result,
                 clims, xlim, ylim,
                 save_fig, path_to_save_fig
                 ):
-        self.logger.info(f"Plotting from file is not implemented yet. Stay tuned and have a good day!")
-        return
+        if entry is None:
+            for entry in self.entry_dict:
+                self._plot_analysis_results_single_entry(detected_params,
+                                     fitted_params,
+                                     matched_params,
+                                     entry,
+                                     frame_num,
+                                     return_result, plot_result,
+                                     clims, xlim, ylim,
+                                     save_fig, path_to_save_fig)
+            return
+        if not entry in self.entry_dict:
+            raise ValueError("entry not found in the NeXus file")
+        self._plot_analysis_results_single_entry(detected_params,
+                                     fitted_params,
+                                     matched_params,
+                                     entry,
+                                     frame_num,
+                                     return_result, plot_result,
+                                     clims, xlim, ylim,
+                                     save_fig, path_to_save_fig)
+
+    def _plot_analysis_results_single_entry(self,
+                                     detected_params,
+                                     fitted_params,
+                                     matched_params,
+                                     entry,
+                                     frame_num,
+                                     return_result, plot_result,
+                                     clims, xlim, ylim,
+                                     save_fig, path_to_save_fig
+                                     ):
+        frame_num_all = self.entry_dict[entry]['shape'][0]
+        if isinstance(frame_num, int):
+            frame_num = [frame_num]
+        elif frame_num is None:
+            frame_num = list(range(frame_num_all))
+        if not isinstance(frame_num, list):
+            raise TypeError("frame_num should be a list / int / None.")
+        for num in frame_num:
+            self._plot_analysis_results_single_frame(
+                detected_params,
+                fitted_params,
+                matched_params,
+                entry,
+                num,
+                return_result, plot_result,
+                clims, xlim, ylim,
+                save_fig, path_to_save_fig
+            )
+            return
+
+    def _plot_analysis_results_single_frame(self,
+                                            detected_params,
+                                            fitted_params,
+                                            matched_params,
+                                            entry,
+                                            frame_num,
+                                            return_result, plot_result,
+                                            clims, xlim, ylim,
+                                            save_fig, path_to_save_fig
+                                            ):
+        conversion = read_conversion_from_nexus(self.nexus, entry, frame_num)
+        detected_peaks = read_detected_peaks(self.nexus, entry, frame_num)
+        fitted_peaks, _, _  = read_fitted_peaks(self.nexus, entry, frame_num)
+        q_xy, q_z = conversion.matrix[0].q_xy, conversion.matrix[0].q_z
+
+        name, fmt = os.path.splitext(path_to_save_fig)
+
+        if detected_params['plot']:
+            detected_params['radius'] = detected_peaks['radius']
+            detected_params['radius_width'] = detected_peaks['radius_width']
+            detected_params['angle'] = detected_peaks['angle']
+            detected_params['angle_width'] = detected_peaks['angle_width']
+        if fitted_params['plot'] or matched_params['plot']:
+            fitted_params['amplitude'] = fitted_peaks['amplitude']
+            fitted_params['q_z'] = fitted_peaks['q_z']
+            fitted_params['q_xy'] = fitted_peaks['q_xy']
+            fitted_params["radius"] = fitted_peaks['radius']
+            fitted_params['is_ring'] = fitted_peaks['is_ring']
+        if matched_params.get('plot', False):
+            container_matched = read_matched_data(self.filename, entry, frame_num)
+            if len(container_matched) == 0:
+                if matched_params['plot']:
+                    self.logger.info(f"Found no matching solution for frame_num {frame_num}")
+                    matched_params['plot'] = False
+                    path_to_save_fig_modif = f"{name}_{entry}_fr_{frame_num:04d}{fmt}"
+                    self.plot_single_frame(conversion.img_gid_q[0], q_xy, q_z,
+                                           detected_params,
+                                           fitted_params,
+                                           matched_params,
+                                           return_result, plot_result,
+                                           clims, xlim, ylim,
+                                           save_fig, path_to_save_fig_modif)
+                    return
+            matched_params['num'] = frame_num
+            for sol_ind in range(len(container_matched)):
+                field_name, sol = container_matched[sol_ind]
+                path_to_save_fig_modif = f"{name}_{entry}_fr_{frame_num:04d}_sol_{sol_ind:04d}{fmt}"
+                matched_params['solution'] = sol
+                matched_params['field_name'] = field_name
+                self.plot_single_frame(conversion.img_gid_q[0], q_xy, q_z,
+                                       detected_params,
+                                       fitted_params,
+                                       matched_params,
+                                       return_result, plot_result,
+                                       clims, xlim, ylim,
+                                       save_fig, path_to_save_fig_modif)
+        else:
+            path_to_save_fig_modif = f"{name}_{entry}_fr_{frame_num:04d}{fmt}"
+            self.plot_single_frame(conversion.img_gid_q[0], q_xy, q_z,
+                                   detected_params,
+                                   fitted_params,
+                                   matched_params,
+                                   return_result, plot_result,
+                                   clims, xlim, ylim,
+                                   save_fig, path_to_save_fig_modif)
+
+
+
+
+
 
     def plot_single_frame(self,
                 img, q_xy, q_z,

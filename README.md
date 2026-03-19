@@ -56,7 +56,7 @@ pip install -e .
 
 
 
-#### Run the class methods:
+### Run the class methods:
 
 Before starting, convert the data using `pygid` and either save it as a NeXus file or pass a `pygid.Conversion` instance after running the `det2q_gid()` conversion.
 
@@ -80,12 +80,39 @@ conversion = pygid.Conversion(
     frame_num=frame_num
 )
 
-# don't run the conversion. It will be done inside. 
-# conversion.det2q_gid(save_result=False)
-
 analysis = mlgidBASE(pygid_conversion=conversion)
 ```
-#### Run analysis methods
+### Run analysis methods
+
+```python
+# peak detection
+analysis.run_detection(
+  entry='entry_0000',           # if read from file
+  frame_num=0,                  # if read from file
+)
+
+# peak fitting
+analysis.run_fitting(
+  entry='entry_0000',           # if read from file
+  frame_num=0,                  # if read from file
+  clustering_distance_peaks = 10,
+  clustering_distance_rings = 10,
+  clustering_extend = 2
+)
+
+# peak matching
+analysis.run_matching(
+  entry='entry_0000',           # if read from file
+  frame_num=0,                  # if read from file
+  cif_prepr = 'prepr_cifs.pickle',
+  probability_threshold = 0.5,
+  intensity_threshold = 0,
+  peaks_type = 'segments',
+  device = 'cpu'
+)
+```
+
+#### Description
 
 #### 1. `mlgidBASE.run_detection()`
 
@@ -95,7 +122,7 @@ Runs peak detection on the specified entry or frame.
 
 - `entry` — Data entry to process. Defaults to `None` (all entries).
 - `frame_num` — Frame number for detection. Defaults to `None` (all frames).
-- `config_file` — Path to detection configuration file. Defaults to `None`.
+- `config_file` — Path to detection configuration file. Defaults to `None` (default parameters).
 
 ---
 
@@ -125,18 +152,83 @@ Matches fitted peaks to CIF patterns.
 - `entry`  — Data entry for matching. Defaults to `None` - all entries.
 - `frame_num`  — Frame number for matching. Defaults to `None` - all frames.
 - `cif_prepr` — Preprocessed CIFs object / path to PICKLE file to load. (Required)
-- `threshold` (`float`) — Matching threshold for peaks. Defaults to `0.5`.
+- `probability_threshold` (`float`) — Matching threshold for peaks. Defaults to `0.5`.
+- `intensity_threshold` - Intensity threshold for fitted peaks to be used in matching. 
 - `peaks_type` (`str`) — Type of peaks used for matching (`'segments'` or `'rings'`). Defaults to `'peaks'`.
 - `device` (`str`) — Computation device (`'cpu'` or `'cuda'`). Defaults to `'cpu'`.
 
 
 ---
+### Plot result
+#### `mlgidBASE.plot_analysis_results()`
 
-#### 4. `mlgidBASE.save_result()`
+The result of conversion and analysis can be visualized using `plot_analysis_results` function. 
+Users can control the color, size and styles of plotted peaks/rings. 
+
+```python
+detected_params = {'line_width': 0.5,
+                 'line_style': "--",
+                 'line_color': "black",
+                 'plot': False}
+fitted_params = {'plot_segments': True,
+                 'marker': 'o',
+                 'marker_size': 50,
+                 'marker_facecolor': "none",
+                 'marker_edgecolor': "bone",
+                 'plot_rings': True,
+                 'line_width': 1,
+                 'line_style': "--",
+                 'line_color': "bone",
+                 'plot': False}
+matched_params = {'plot_segments': True,
+                 'marker': ['s'],
+                 'marker_size': [50],
+                 'marker_facecolor': ["none"],
+                 'marker_edgecolor': ["green", "red"],
+                 'plot_rings': True,
+                 'line_width': [1],
+                 'line_style': ["--"],
+                 'line_color': ["green"],
+                 'plot': True,
+                 'legend': True}
+                              
+analysis.plot_analysis_results(
+          detected_params = detected_params,
+          fitted_params = fitted_params,
+          matched_params = matched_params,
+          frame_num = None, entry = None, # if read from file 
+          return_result=False, plot_result=True,
+          clims=(50, 1e4), 
+          xlim=(None, None), ylim=(None, None),
+          save_fig=True, path_to_save_fig="img.png")
+```
+Examples:
+- rings
+<p align="center">
+  <img src="./example/img_entry_0001_fr_0000_sol_0000.png" width="400" alt="pygidFIT">
+</p>
+
+- peaks
+
+<p align="center">
+  <img src="./example/img_entry_0001_fr_0000_sol_0001.png" width="400" alt="pygidFIT">
+</p>
+
+### Save result
+
+#### `mlgidBASE.save_result()`
 
 If the `mlgidBASE` instance was created from a file, results are saved automatically at each step (for every entry and frame).
 
 If the analysis is performed from a `pygid.Conversion` instance, `save_result()` must be called manually after completing the analysis.
+
+
+```python
+analysis.save_result(
+    path_to_save='result.h5',
+    save_polar=True
+)
+```
 
 **Parameters:**
 
@@ -151,6 +243,8 @@ If the analysis is performed from a `pygid.Conversion` instance, `save_result()`
 - `smpl_metadata` (`pygid.SampleMetadata`, optional) — Instance containing sample-related metadata to be stored in the file. Default is `None`.
 
 - `exp_metadata` (`pygid.ExpMetadata`, optional) — Instance containing experimental metadata to be stored in the file. Default is `None`.
+
+- `save_polar` (`bool`, optional) - Whether save the polar image used in analysis.
 
 The method stores processed images, detected peaks, fitted results, matched data, unit cell parameters, and associated metadata in a structured HDF5 format.
 

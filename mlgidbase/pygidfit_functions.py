@@ -20,7 +20,7 @@ def run_pygidfit_from_memory(img_container_detect, wavelength, q_xy_max, q_z_max
                              clustering_distance_rings,
                              clustering_extend,
                              peaks_pool, debug, multiprocessing):
-    polar_img = img_container_detect.converted_polar_image[0][0]
+    polar_img = img_container_detect.converted_polar_image
     radius = img_container_detect.radius
     radius_width = img_container_detect.radius_width
     angle = img_container_detect.angle

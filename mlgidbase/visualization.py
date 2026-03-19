@@ -142,7 +142,7 @@ def plot_analysis_results(
 
     if save_fig:
         if path_to_save_fig is not None:
-            plt.savefig(path_to_save_fig, pad_inches=0.5)
+            plt.savefig(path_to_save_fig, pad_inches=0.5, bbox_inches = 'tight')
             logging.info(f"Saved figure in {Path(path_to_save_fig).resolve()}")
         else:
             raise ValueError("path_to_save_fig is not defined.")
@@ -202,20 +202,22 @@ def _plot_matched(ax, matched_params, fitted_params):
     qxy, qz = np.array(fitted_params["q_xy"]), np.array(fitted_params["q_z"])
     amp, rad, rings = map(np.array, (fitted_params["amplitude"], fitted_params["radius"], fitted_params["is_ring"]))
     solution = matched_params['solution']
-    num = matched_params['num']
-    field_name = matched_params['field_name']
 
-    marker_cycle = cycle(matched_params.get('marker', ['o']))
+    marker_cycle = cycle(matched_params.get('marker', ['o', 'x', 's']))
     size_cycle = cycle(matched_params.get('marker_size', [50]))
     face_cycle = cycle(matched_params.get('marker_facecolor', ['none']))
-    edge_cycle = cycle(matched_params.get('marker_edgecolor', ['blue']))
+    edge_cycle = cycle(matched_params.get('marker_edgecolor', ['blue', 'green', 'red']))
     lw_cycle = cycle(matched_params.get('line_width', [1]))
     ls_cycle = cycle(matched_params.get('line_style', ['--']))
-    lc_cycle = cycle(matched_params.get('line_color', ['blue']))
+    lc_cycle = cycle(matched_params.get('line_color', ['blue', 'green', 'red']))
+    intensity_threshold = fitted_params.get('intensity_threshold', 0)
+    probability_threshold = matched_params.get('probability_threshold', 0)
 
     legend_flag = matched_params.get('legend', False)
 
     for cif, h, k, l, probability, ind_list in solution:
+        if probability < probability_threshold:
+            continue
 
         marker = next(marker_cycle)
         marker_size = next(size_cycle)
@@ -231,6 +233,9 @@ def _plot_matched(ax, matched_params, fitted_params):
         ring_idx = ind_list[rings[ind_list]]
         peak_idx = ind_list[~rings[ind_list]]
 
+        ring_idx = [i for i in ring_idx if amp[i] > intensity_threshold]
+        peak_idx = [i for i in peak_idx if amp[i] > intensity_threshold]
+
         label = f"{cif.decode().split('.')[0]} {int(h),int(k),int(l)} {np.round(float(probability), 3)}"
 
         # ---- peaks ----
@@ -242,6 +247,7 @@ def _plot_matched(ax, matched_params, fitted_params):
                 colors = cmap(norm(amp[peak_idx]))
             else:
                 colors = marker_edge
+
 
             ax.scatter(
                 qxy[peak_idx],

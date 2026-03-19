@@ -31,11 +31,14 @@ def get_unique_solutions(match_class, peaks_type, threshold, q_xy_max, q_z_max, 
     return set_global_indices(unique_solutions[meas], n_total, indices_roi)
 
 
-def run_mlgidmatch_from_file(filename, entry, frame_num, match_class, threshold, peaks_type):
-    fitted_peaks, q_xy_max, q_z_max = read_fitted_peaks(filename, entry, frame_num)
+def run_mlgidmatch_from_file(nexus, entry, frame_num, match_class, threshold, peaks_type, int_min):
+    fitted_peaks, q_xy_max, q_z_max = read_fitted_peaks(nexus, entry, frame_num)
     if not peaks_type in ['rings', 'segments']:
         raise TypeError('peaks_type must be "rings" or "segments"')
-    mask = fitted_peaks["is_ring"] if peaks_type == 'rings' else ~fitted_peaks["is_ring"]
+    type_mask = fitted_peaks["is_ring"] if peaks_type == 'rings' else ~fitted_peaks["is_ring"]
+    intensity_mask = fitted_peaks['amplitude'] > int_min
+    mask = type_mask & intensity_mask
+
     intensity_roi = fitted_peaks['amplitude'][mask]
     q_2d_roi = np.column_stack((fitted_peaks['q_xy'][mask], fitted_peaks['q_z'][mask]))
     indices_roi = np.where(mask)[0]

@@ -47,14 +47,10 @@ def save_fit(filename, entry, frame_num, img_container_fit):
         group_name = f"/{entry}/data/analysis/frame{str(frame_num).zfill(5)}"
         pygid._save_img_container_fit(f, group_name, img_container_fit)
         return
+
 def save_match(filename, entry, frame_num, container_matched):
     with File(filename, "r+") as f:
         group_name = f"/{entry}/data/analysis/frame{str(frame_num).zfill(5)}"
-        process_metadata = {'entry':entry,
-                            'frame_num':frame_num,
-                            'program': 'mlgidmatch',
-                            'version': version("mlgidmatch"),
-                            'date': datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')}
         pygid._save_matched_data(f, group_name, container_matched)
         return
 

@@ -1,3 +1,4 @@
+import mlgiddetect
 from mlgiddetect.inference import Inference
 from mlgiddetect.configuration import Config
 from mlgiddetect.preprocessing import standard_preprocessing
@@ -5,6 +6,7 @@ from mlgiddetect.postprocessing import standard_postprocessing
 from mlgiddetect.preprocessing import (contrast_correction, add_batch_and_color_channel,
                                         grayscale_to_color)
 from mlgiddetect.dataloader import ImageContainer
+import importlib.metadata
 import numpy as np
 
 def load_config(config):

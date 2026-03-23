@@ -4,6 +4,8 @@ from .pygid_functions import read_fitted_peaks
 import pickle
 import numpy as np
 import h5py
+from dataclasses import dataclass
+from typing import List
 
 def load_cif_prepr(cif_prepr):
     if isinstance(cif_prepr, str):
@@ -91,11 +93,13 @@ unique_solutions_dtype = np.dtype([
 
 def solution2container(unique_solutions):
     peaks_type = unique_solutions.pop('peaks_type', 'segments')
-    container_matched = []
+    metadata = unique_solutions.pop('metadata', None)
+    sol_list = []
+    name_list = []
 
     for sol_idx in unique_solutions.keys():
         unique_solution = unique_solutions[sol_idx]
-        field_name = f"matched_{peaks_type}_{sol_idx:04d}"
+        field_name = f"matched_{peaks_type}_{int(sol_idx):04d}"
         number_of_structs = len(unique_solution)
 
         names = [struct_data['cif'] for struct_data in unique_solution]
@@ -116,12 +120,6 @@ def solution2container(unique_solutions):
             np.nanmax(struct_data['matched_peaks'])
             for struct_data in unique_solution
         ]
-
-        # is_rings = (
-        #     [False] * number_of_structs
-        #     if peaks_type == 'segments'
-        #     else [True] * number_of_structs
-        # )
 
         vlen_int_type = h5py.vlen_dtype(np.int32)
 
@@ -150,6 +148,18 @@ def solution2container(unique_solutions):
         # for i, idx_arr in enumerate(orientations):
         #     results_array['orientation'][i] = idx_arr
 
-        container_matched.append((field_name, results_array))
+        sol_list.append(results_array)
+        name_list.append(field_name)
 
-    return container_matched
+    return ContainerMatched(
+        sol_list,
+        name_list,
+        metadata
+    )
+
+
+@dataclass
+class ContainerMatched:
+    results_arrays: List
+    field_names: List
+    metadata: dict

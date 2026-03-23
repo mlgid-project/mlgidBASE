@@ -2,9 +2,12 @@ import numpy as np
 import os
 from typing import List, Any, Optional
 import logging
+from datetime import datetime
+import importlib.metadata
+import torch
 
 import pygid
-from .pygid_functions import (check_valid_conversion, save_detect, get_nexus, \
+from .pygid_functions import (save_detect, get_nexus, \
     read_conversion_from_nexus, save_fit, save_match, read_detected_peaks, read_fitted_peaks, read_matched_data, \
                               save_pipeline, det2pol_gid_pygid, det2q_gid_pygid)
 from .mlgiddetect_functions import load_config, run_mlgiddetect, load_inference, run_mlgiddetect_from_polar
@@ -15,6 +18,7 @@ from .visualization import get_plot_params, get_plot_context, plot_analysis_resu
 from mlgidmatch.preprocess.cif_preprocess import CifPattern
 from mlgiddetect.configuration import Config
 from mlgiddetect.inference import Inference
+
 
 class mlgidBASE:
     def __init__(
@@ -89,7 +93,7 @@ class mlgidBASE:
             self.entry_dict = self.nexus.entry_dict
             self.from_nexus = True
 
-    def run_detection(self, entry = None, frame_num = None, config_detect = None):
+    def run_detection(self, entry = None, frame_num = None, config_detect = None, model_type = None):
 
         if config_detect is not None:
             if self.config_detect is not None:
@@ -97,7 +101,10 @@ class mlgidBASE:
             else:
                 self.config_detect = config_detect
         self.config_detect = load_config(config_detect)
-
+        if model_type is not None:
+            if self.config_detect.MODEL_TYPE != model_type:
+                self.config_detect.MODEL_TYPE = model_type
+                self.imp_detect = None
         if self.imp_detect is None:
             self.load_inference()
 
@@ -110,9 +117,6 @@ class mlgidBASE:
     def load_inference(self):
         self.imp_detect = load_inference(self.config_detect)
     def run_detection_from_memory(self):
-        # img_list = self.pygid_conversion.img_gid_q # if frame_num is None else [self.pygid_conversion.img_gid_q[frame_num]]
-        # q_xy = self.pygid_conversion.matrix[0].q_xy
-        # q_z = self.pygid_conversion.matrix[0].q_z
 
         self.config_detect.GEO_RECIPROCAL_SHAPE = list(self.pygid_conversion.img_gid_q[0].shape)
         self.config_detect.GEO_PIXELPERANGSTROEM = self.config_detect.GEO_RECIPROCAL_SHAPE[0] / np.nanmax(self.q_abs)
@@ -125,6 +129,7 @@ class mlgidBASE:
                                                              self.imp_detect, self.config_detect)
             img_container_detect.ai = self.pygid_conversion.ai_list[i]
             img_container_detect.wavelength = self.pygid_conversion.matrix[0].params.wavelength
+            img_container_detect.metadata = self._set_detection_metadata()
             self.img_container_detect_list.append(img_container_detect)
 
     def run_detection_from_file(self, entry, frame_num):
@@ -148,12 +153,19 @@ class mlgidBASE:
 
     def _run_detection_single_frame(self, entry, frame_num):
         conversion = read_conversion_from_nexus(self.nexus, entry, frame_num)
-
         img_container_detect = run_mlgiddetect(conversion.img_gid_q[0], conversion.matrix[0].q_xy, conversion.matrix[0].q_z,
                          self.imp_detect, self.config_detect)
+        img_container_detect.metadata = self._set_detection_metadata()
         save_detect(self.filename, entry, frame_num, img_container_detect)
         self.logger.info(f"Saved detected peaks to file: {self.filename}, entry: {entry}, frame: {frame_num}")
 
+    def _set_detection_metadata(self):
+        metadata = {'program': 'mlgiddetect',
+                    'version': importlib.metadata.version("mlgiddetect"),
+                    'date': datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'),
+                    }
+        metadata.update(self.config_detect.__dict__)
+        return metadata
 
     def run_fitting(self, entry = None, frame_num = None, crit_angle = 0,
                     clustering_distance_peaks = 10, clustering_distance_rings = 10,
@@ -202,12 +214,25 @@ class mlgidBASE:
                                      peaks_pool = peaks_pool, debug = debug, multiprocessing = False)
             img_container_fit.q_xy = q_xy
             img_container_fit.q_z = q_z
+            img_container_fit.metadata = self._set_fitting_metadata(
+                clustering_distance_peaks = clustering_distance_peaks,
+                clustering_distance_rings = clustering_distance_rings,
+                clustering_extend = clustering_extend,
+                use_pool = use_pool)
             self.img_container_fit_list.append(img_container_fit)
 
-
+    def _set_fitting_metadata(self, **kwargs):
+        metadata = {'program': 'pygidfit',
+                    'version': importlib.metadata.version("pygidfit"),
+                    'date': datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'),
+                    }
+        metadata.update(kwargs)
+        return metadata
 
     def run_matching(self, entry = None, frame_num = None, cif_prepr=None,
-                     probability_threshold=0.5, peaks_type='segments', device='cpu', intensity_threshold = 0, threshold=None):
+                     probability_threshold=0.5, peaks_type='segments', device=None, intensity_threshold = 0, threshold=None):
+        if device is None:
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
         if threshold:
             probability_threshold = threshold
         if cif_prepr is not None:
@@ -230,20 +255,33 @@ class mlgidBASE:
         if self.img_container_fit_list is None:
             raise ValueError("img_container_fit_list is not defined. Call run_fitting before run_fitting")
         for frame_num, img_container_fit in enumerate(self.img_container_fit_list):
-            amplitude = img_container_fit.amplitude
-            int_mask = amplitude > int_min
+            amplitude_full = img_container_fit.amplitude
+            int_mask = amplitude_full > int_min
+
             q_xy_max = np.nanmax(img_container_fit.q_xy)
             q_z_max = np.nanmax(img_container_fit.q_z)
+
+            # original indices
+            original_indices = np.arange(len(amplitude_full))
+            filtered_indices = original_indices[int_mask]
+
+            # filtered data
+            amplitude = amplitude_full[int_mask]
             is_ring = img_container_fit.is_ring[int_mask]
-            amplitude = img_container_fit.amplitude[int_mask]
             q_z = img_container_fit.qzqxyboxes[0][int_mask]
             q_xy = img_container_fit.qzqxyboxes[1][int_mask]
 
+            # second mask
             mask = is_ring if peaks_type == 'rings' else ~is_ring
+
             intensity_roi = amplitude[mask]
             q_2d_roi = np.column_stack((q_xy[mask], q_z[mask]))
-            indices_roi = np.where(mask)[0]
-            n_total = len(mask)
+
+            # GLOBAL indices
+            indices_roi = filtered_indices[mask]
+
+            # IMPORTANT: global size
+            n_total = len(amplitude_full)
 
             unique_solutions = get_unique_solutions(self.match_class, peaks_type, threshold, q_xy_max, q_z_max, q_2d_roi, frame_num,
                                  intensity_roi, indices_roi, n_total)
@@ -252,6 +290,13 @@ class mlgidBASE:
                 self.logger.info(f"No solutions was found. Try to decrease the threshold")
                 continue
             unique_solutions['peaks_type'] = peaks_type
+            unique_solutions['metadata'] = self._set_matching_metadata(
+                probability_threshold=threshold,
+                peaks_type=peaks_type,
+                intensity_threshold=int_min,
+                CIFs=self.match_class.config.cif_prepr.cifs,
+                device=self.match_class.device,
+            )
             self.container_match_list.append(solution2container(unique_solutions))
 
     def run_matching_from_file(self, entry, frame_num, threshold, peaks_type, int_min):
@@ -282,10 +327,24 @@ class mlgidBASE:
                              f"Try to decrease threshold")
             return
         unique_solutions['peaks_type'] = peaks_type
+        unique_solutions['metadata'] = self._set_matching_metadata(
+            threshold=threshold,
+            peaks_type=peaks_type,
+            intensity_min=int_min,
+            cifs=self.match_class.config.cif_prepr.cifs,
+            device=self.match_class.device,
+        )
         self.unique_solutions = unique_solutions
-        # container_matched =  solution2container(unique_solutions)
         save_match(self.filename, entry, frame_num, solution2container(unique_solutions))
         self.logger.info(f"Saved matched peaks to file: {self.filename}, entry: {entry}, frame: {frame_num}")
+
+    def _set_matching_metadata(self, **kwargs):
+        metadata = {'program': 'mlgidmatch',
+                    'version': importlib.metadata.version("mlgidmatch"),
+                    'date': datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'),
+                    }
+        metadata.update(kwargs)
+        return metadata
 
     def save_result(self, path_to_save = 'result.h5', overwrite_file = True, h5_group = 'entry_0000',
                     overwrite_group = False, smpl_metadata = None, exp_metadata = None,
@@ -460,7 +519,7 @@ class mlgidBASE:
                                                save_fig, path_to_save_fig)
                         continue
                 matched_params['num'] = num
-                for field_name, sol in container_matched:
+                for field_name, sol in zip(container_matched.field_names, container_matched.results_arrays):
                     matched_params['solution'] = sol
                     matched_params['field_name'] = field_name
                     self.plot_single_frame(self.pygid_conversion.img_gid_q[num], self.q_xy , self.q_z,
@@ -632,11 +691,17 @@ class mlgidBASE:
 
     def check_valid_data(self, detected_params, fitted_params, matched_params):
         if self.img_container_detect_list is None and detected_params.get('plot', True):
-            raise ValueError("No detected peaks. Use run_detection() first.")
+            self.logger.info("No detected peaks. Use run_detection() first.")
+            detected_params['plot'] = False
+            fitted_params['plot'] = False
+            matched_params['plot'] = False
         if self.img_container_fit_list is None and fitted_params.get('plot', True):
-            raise ValueError("No fitted peaks. Use run_fitting() first.")
+            self.logger.info("No fitted peaks. Use run_fitting() first.")
+            fitted_params['plot'] = False
+            matched_params['plot'] = False
         if self.container_match_list is None and matched_params.get('plot', True):
-            raise ValueError("No matched peaks. Use run_matching() first.")
+            self.logger.info("No matched peaks. Use run_matching() first.")
+            matched_params['plot'] = False
         if not hasattr(self.pygid_conversion, 'img_gid_q'):
             raise ValueError("img_gid_q is not available in pygid.Conversion."
                              "Use plotting before saving.")

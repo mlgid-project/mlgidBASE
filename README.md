@@ -16,26 +16,13 @@ The package builds upon:
 
 ## Installation
 
-### Prerequisites
+### Install using pip
 
-Before installing `mlgidBASE`, ensure that the following packages are installed:
+```bash
+pip install pygid
+```
 
-- `pygid`  
-  Install from: https://github.com/mlgid-project/pygid  
-  or via PyPI:
-  ```bash
-  pip install pygid
-  ```
-- `mlgidDETECT` 
-https://github.com/mlgid-project/mlgidDETECT
-- `pygidFIT` 
-https://github.com/mlgid-project/pygidFIT
-- `mlgidMATCH` 
-https://github.com/mlgid-project/mlgidMATCH_private
-
-  
-
-After installing all prerequisites, install `mlgidBASE` from source.
+### Install from source
 
 First, clone the repository:
 
@@ -44,9 +31,10 @@ git clone https://github.com/mlgid-project/mlgidBASE.git
 ```
 
 Then navigate to the project directory and install it in editable mode:
+```bash
 cd mlgidBASE
 pip install -e .
-
+```
 
 #### Required Python version: 3.12
 

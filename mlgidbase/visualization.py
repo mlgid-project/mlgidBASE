@@ -8,6 +8,8 @@ import logging
 from pathlib import Path
 from matplotlib.patches import Arc
 from itertools import cycle
+import os
+from .pygid_functions import read_conversion_from_nexus, read_detected_peaks, read_fitted_peaks, read_matched_data
 
 def get_plot_params(font_size=14, axes_titlesize=14, axes_labelsize=18, grid=False, grid_color='gray',
                     grid_linestyle='--', grid_linewidth=0.5, xtick_labelsize=14, ytick_labelsize=14,
@@ -153,6 +155,269 @@ def plot_analysis_results(
         plt.show()
     return p
 
+
+def _plot_analysis_results(analysis,
+                           detected_params,
+                           fitted_params,
+                           matched_params,
+                           frame_num, entry,
+                           return_result, plot_result,
+                           clims, xlim, ylim,
+                           save_fig, path_to_save_fig):
+    if not analysis.from_nexus:
+        if not entry is None:
+            analysis.logger.info(f"entry is ignored when analysis is from memory")
+        entry = 'entry_0000'
+        _plot_analysis_results_from_memory(
+            analysis,
+            detected_params,
+            fitted_params,
+            matched_params,
+            entry,
+            frame_num,
+            return_result, plot_result,
+            clims, xlim, ylim,
+            save_fig, path_to_save_fig
+        )
+    else:
+        _plot_analysis_results_from_file(
+            analysis,
+            detected_params,
+            fitted_params,
+            matched_params,
+            entry, frame_num,
+            return_result, plot_result,
+            clims, xlim, ylim,
+            save_fig, path_to_save_fig)
+
+
+def _plot_analysis_results_from_memory(analysis,
+                                      detected_params,
+                                      fitted_params,
+                                      matched_params,
+                                      entry,
+                                      frame_num,
+                                      return_result, plot_result,
+                                      clims, xlim, ylim,
+                                      save_fig, path_to_save_fig
+                                      ):
+    analysis.check_valid_data(detected_params, fitted_params, matched_params)
+
+    if isinstance(frame_num, int):
+        frame_num = [frame_num]
+    elif frame_num is None:
+        frame_num = list(range(len(analysis.pygid_conversion.img_gid_q)))
+    if not isinstance(frame_num, list):
+        raise TypeError("frame_num should be a list / int / None.")
+    for num in frame_num:
+        if detected_params['plot']:
+            img_container_detect = analysis.img_container_detect_list[num]
+            detected_params['radius'] = img_container_detect.radius
+            detected_params['radius_width'] = img_container_detect.radius_width
+            detected_params['angle'] = img_container_detect.angle
+            detected_params['angle_width'] = [abs(aw) for aw in img_container_detect.angle_width]
+        if fitted_params['plot'] or matched_params['plot']:
+            img_container_fit = analysis.img_container_fit_list[num]
+            fitted_params['amplitude'] = img_container_fit.amplitude
+            fitted_params['q_z'] = img_container_fit.qzqxyboxes[0]
+            fitted_params['q_xy'] = img_container_fit.qzqxyboxes[1]
+            fitted_params["radius"] = img_container_fit.radius
+            fitted_params['is_ring'] = img_container_fit.is_ring
+        if matched_params['plot']:
+            container_matched = analysis.container_match_list[num]
+            if container_matched is None:
+                if matched_params['plot']:
+                    analysis.logger.info(f"Found no matching solution for frame_num {num}")
+                    matched_params['plot'] = False
+                    _plot_single_frame(analysis,
+                                       analysis.pygid_conversion.img_gid_q[num], analysis.q_xy, analysis.q_z,
+                                           detected_params,
+                                           fitted_params,
+                                           matched_params,
+                                           return_result, plot_result,
+                                           clims, xlim, ylim,
+                                           save_fig, path_to_save_fig)
+                    continue
+            matched_params['num'] = num
+            for field_name, sol in zip(container_matched.field_names, container_matched.results_arrays):
+                matched_params['solution'] = sol
+                matched_params['field_name'] = field_name
+                _plot_single_frame(analysis,
+                                  analysis.pygid_conversion.img_gid_q[num], analysis.q_xy, analysis.q_z,
+                                       detected_params,
+                                       fitted_params,
+                                       matched_params,
+                                       return_result, plot_result,
+                                       clims, xlim, ylim,
+                                       save_fig, path_to_save_fig)
+        else:
+            _plot_single_frame(analysis,
+                              analysis.pygid_conversion.img_gid_q[num], analysis.q_xy, analysis.q_z,
+                                   detected_params,
+                                   fitted_params,
+                                   matched_params,
+                                   return_result, plot_result,
+                                   clims, xlim, ylim,
+                                   save_fig, path_to_save_fig)
+
+
+def _plot_analysis_results_from_file(analysis,
+                                    detected_params,
+                                    fitted_params,
+                                    matched_params,
+                                    entry,
+                                    frame_num,
+                                    return_result, plot_result,
+                                    clims, xlim, ylim,
+                                    save_fig, path_to_save_fig
+                                    ):
+    if entry is None:
+        for entry in analysis.entry_dict:
+            _plot_analysis_results_single_entry(analysis,
+                                                detected_params,
+                                                     fitted_params,
+                                                     matched_params,
+                                                     entry,
+                                                     frame_num,
+                                                     return_result, plot_result,
+                                                     clims, xlim, ylim,
+                                                     save_fig, path_to_save_fig)
+        return
+    if not entry in analysis.entry_dict:
+        raise ValueError("entry not found in the NeXus file")
+    _plot_analysis_results_single_entry(analysis,
+                                        detected_params,
+                                             fitted_params,
+                                             matched_params,
+                                             entry,
+                                             frame_num,
+                                             return_result, plot_result,
+                                             clims, xlim, ylim,
+                                             save_fig, path_to_save_fig)
+
+
+def _plot_analysis_results_single_entry(analysis,
+                                        detected_params,
+                                        fitted_params,
+                                        matched_params,
+                                        entry,
+                                        frame_num,
+                                        return_result, plot_result,
+                                        clims, xlim, ylim,
+                                        save_fig, path_to_save_fig
+                                        ):
+    frame_num_all = analysis.entry_dict[entry]['shape'][0]
+    if isinstance(frame_num, int):
+        frame_num = [frame_num]
+    elif frame_num is None:
+        frame_num = list(range(frame_num_all))
+    if not isinstance(frame_num, list):
+        raise TypeError("frame_num should be a list / int / None.")
+    for num in frame_num:
+        _plot_analysis_results_single_frame(
+            analysis,
+            detected_params,
+            fitted_params,
+            matched_params,
+            entry,
+            num,
+            return_result, plot_result,
+            clims, xlim, ylim,
+            save_fig, path_to_save_fig
+        )
+        return
+
+
+def _plot_analysis_results_single_frame(analysis,
+                                        detected_params,
+                                        fitted_params,
+                                        matched_params,
+                                        entry,
+                                        frame_num,
+                                        return_result, plot_result,
+                                        clims, xlim, ylim,
+                                        save_fig, path_to_save_fig
+                                        ):
+    conversion = read_conversion_from_nexus(analysis.nexus, entry, frame_num)
+    detected_peaks = read_detected_peaks(analysis.nexus, entry, frame_num)
+    fitted_peaks, _, _ = read_fitted_peaks(analysis.nexus, entry, frame_num)
+    q_xy, q_z = conversion.matrix[0].q_xy, conversion.matrix[0].q_z
+
+    name, fmt = os.path.splitext(path_to_save_fig)
+
+    if detected_params['plot']:
+        detected_params['radius'] = detected_peaks['radius']
+        detected_params['radius_width'] = detected_peaks['radius_width']
+        detected_params['angle'] = detected_peaks['angle']
+        detected_params['angle_width'] = detected_peaks['angle_width']
+    if fitted_params['plot'] or matched_params['plot']:
+        fitted_params['amplitude'] = fitted_peaks['amplitude']
+        fitted_params['q_z'] = fitted_peaks['q_z']
+        fitted_params['q_xy'] = fitted_peaks['q_xy']
+        fitted_params["radius"] = fitted_peaks['radius']
+        fitted_params['is_ring'] = fitted_peaks['is_ring']
+    if matched_params.get('plot', False):
+        container_matched = read_matched_data(analysis.filename, entry, frame_num)
+        if len(container_matched) == 0:
+            if matched_params['plot']:
+                analysis.logger.info(f"Found no matching solution for frame_num {frame_num}")
+                matched_params['plot'] = False
+                path_to_save_fig_modif = f"{name}_{entry}_fr_{frame_num:04d}{fmt}"
+                _plot_single_frame(analysis,
+                                  conversion.img_gid_q[0], q_xy, q_z,
+                                       detected_params,
+                                       fitted_params,
+                                       matched_params,
+                                       return_result, plot_result,
+                                       clims, xlim, ylim,
+                                       save_fig, path_to_save_fig_modif)
+                return
+        matched_params['num'] = frame_num
+        for sol_ind in range(len(container_matched)):
+            field_name, sol = container_matched[sol_ind]
+            path_to_save_fig_modif = f"{name}_{entry}_fr_{frame_num:04d}_sol_{sol_ind:04d}{fmt}"
+            matched_params['solution'] = sol
+            matched_params['field_name'] = field_name
+            _plot_single_frame(analysis,
+                              conversion.img_gid_q[0], q_xy, q_z,
+                                   detected_params,
+                                   fitted_params,
+                                   matched_params,
+                                   return_result, plot_result,
+                                   clims, xlim, ylim,
+                                   save_fig, path_to_save_fig_modif)
+    else:
+        path_to_save_fig_modif = f"{name}_{entry}_fr_{frame_num:04d}{fmt}"
+        _plot_single_frame(analysis,
+                          conversion.img_gid_q[0], q_xy, q_z,
+                               detected_params,
+                               fitted_params,
+                               matched_params,
+                               return_result, plot_result,
+                               clims, xlim, ylim,
+                               save_fig, path_to_save_fig_modif)
+
+
+def _plot_single_frame(analysis,
+                      img, q_xy, q_z,
+                      detected_params,
+                      fitted_params,
+                      matched_params,
+                      return_result, plot_result,
+                      clims, xlim, ylim,
+                      save_fig, path_to_save_fig):
+    with get_plot_context(analysis.plot_params):
+        return plot_analysis_results(
+            img, q_xy, q_z,
+            detected_params,
+            fitted_params,
+            matched_params,
+            return_result, plot_result,
+            clims, xlim, ylim,
+            save_fig, path_to_save_fig)
+    
+    
+    
 def _plot_detected(ax, detected_params):
     rad = detected_params['radius']
     radw = detected_params['radius_width']
@@ -165,7 +430,9 @@ def _plot_detected(ax, detected_params):
                              theta1=a - da, theta2=a + da,
                              lw=detected_params.get('line_width', 0.5),
                              ls=detected_params.get('line_style', "--"),
-                             color=detected_params.get('line_color', "black"),))
+                             color=detected_params.get('line_color', "black"), ))
+
+
 def _plot_fitted(ax, fitted_params):
     qxy, qz = np.array(fitted_params["q_xy"]), np.array(fitted_params["q_z"])
     amp, rad, rings = map(np.array, (fitted_params["amplitude"], fitted_params["radius"], fitted_params["is_ring"]))
@@ -174,28 +441,24 @@ def _plot_fitted(ax, fitted_params):
     mask = ~rings
     if mask.any():
         norm = LogNorm(vmin=max(amp[mask].min(), 1e-3), vmax=amp[mask].max())
-        cmap = plt.get_cmap(fitted_params.get('marker_edgecolor','bone'))
+        cmap = plt.get_cmap(fitted_params.get('marker_edgecolor', 'bone'))
         colors = cmap(norm(amp[mask]))
 
         ax.scatter(
             qxy[mask],
             qz[mask],
-            facecolors=fitted_params.get('marker_facecolor','none'),  # hollow inside
+            facecolors=fitted_params.get('marker_facecolor', 'none'),  # hollow inside
             edgecolors=colors,  # color rings according to amp
-            marker=fitted_params.get('marker','o'),
-            s=fitted_params.get('marker_size',50),
-            # label='fitted'
+            marker=fitted_params.get('marker', 'o'),
+            s=fitted_params.get('marker_size', 50),
         )
-        # ax.scatter(qxy[mask], qz[mask], c=amp[mask], cmap="bone", facecolor = None,#edgecolors='black',
-        #            norm=LogNorm(vmin=max(amp[mask].min(), 1e-3), vmax=amp[mask].max()),
-        # marker="o", s=50, label="fitted")
 
     # draw rings
-    plt_color = plt.get_cmap(fitted_params.get('line_color','bone'))
+    plt_color = plt.get_cmap(fitted_params.get('line_color', 'bone'))
     for r, a in zip(rad[rings], amp[rings]):
         ax.add_patch(Arc((0, 0), 2 * r, 2 * r, theta1=0, theta2=90,
                          color=plt_color(np.log10(max(a, 1e-3)) / np.log10(amp[rings].max())),
-                         lw=fitted_params.get('line_width',1), ls=fitted_params.get('line_style','--')))
+                         lw=fitted_params.get('line_width', 1), ls=fitted_params.get('line_style', '--')))
 
 
 def _plot_matched(ax, matched_params, fitted_params):
@@ -236,7 +499,7 @@ def _plot_matched(ax, matched_params, fitted_params):
         ring_idx = [i for i in ring_idx if amp[i] > intensity_threshold]
         peak_idx = [i for i in peak_idx if amp[i] > intensity_threshold]
 
-        label = f"{cif.decode().split('.')[0]} {int(h),int(k),int(l)} {np.round(float(probability), 3)}"
+        label = f"{cif.decode().split('.')[0]} {int(h), int(k), int(l)} {np.round(float(probability), 3)}"
 
         # ---- peaks ----
         if len(peak_idx) > 0:
@@ -247,7 +510,6 @@ def _plot_matched(ax, matched_params, fitted_params):
                 colors = cmap(norm(amp[peak_idx]))
             else:
                 colors = marker_edge
-
 
             ax.scatter(
                 qxy[peak_idx],
@@ -282,8 +544,8 @@ def _plot_matched(ax, matched_params, fitted_params):
                 ax.add_patch(
                     Arc(
                         (0, 0),
-                        2*r,
-                        2*r,
+                        2 * r,
+                        2 * r,
                         theta1=0,
                         theta2=90,
                         color=color,
@@ -295,3 +557,4 @@ def _plot_matched(ax, matched_params, fitted_params):
                 label = None
     if legend_flag:
         ax.legend()
+

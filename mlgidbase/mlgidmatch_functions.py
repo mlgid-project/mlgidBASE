@@ -1,11 +1,138 @@
 from mlgidmatch.matching import Match
 from mlgidmatch.preprocess.cif_preprocess import CifPattern
-from .pygid_functions import read_fitted_peaks
+from .pygid_functions import read_fitted_peaks, save_match
 import pickle
 import numpy as np
 import h5py
 from dataclasses import dataclass
 from typing import List
+import torch
+from datetime import datetime
+import importlib.metadata
+
+def _run_matching(analysis, entry=None, frame_num=None, cif_prepr=None,
+                  probability_threshold=0.5, peaks_type='segments', device=None, intensity_threshold=0, threshold=None):
+    if device is None:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    if threshold:
+        probability_threshold = threshold
+    if cif_prepr is not None:
+        if analysis.cif_prepr is not None:
+            analysis.logger.info(f"cif_prepr is already set. The previous cif_prepr is to be used")
+        else:
+            analysis.cif_prepr = cif_prepr
+    analysis.cif_prepr = load_cif_prepr(analysis.cif_prepr)
+    if not hasattr(analysis, 'match_class') or analysis.match_class is None:
+        analysis.match_class = set_match_class(analysis.cif_prepr, device)
+    if not analysis.from_nexus:
+        if frame_num != 1 and not frame_num is None:
+            analysis.logger.warning("frame_num will be ignored.")
+        _run_matching_from_memory(analysis, probability_threshold, peaks_type, intensity_threshold)
+    else:
+        _run_matching_from_file(analysis, entry, frame_num, probability_threshold, peaks_type, intensity_threshold)
+
+
+def _run_matching_from_memory(analysis, threshold, peaks_type, int_min):
+    analysis.container_match_list = []
+    if analysis.img_container_fit_list is None:
+        raise ValueError("img_container_fit_list is not defined. Call run_fitting before run_fitting")
+    for frame_num, img_container_fit in enumerate(analysis.img_container_fit_list):
+        amplitude_full = img_container_fit.amplitude
+        int_mask = amplitude_full > int_min
+
+        q_xy_max = np.nanmax(img_container_fit.q_xy)
+        q_z_max = np.nanmax(img_container_fit.q_z)
+
+        # original indices
+        original_indices = np.arange(len(amplitude_full))
+        filtered_indices = original_indices[int_mask]
+
+        # filtered data
+        amplitude = amplitude_full[int_mask]
+        is_ring = img_container_fit.is_ring[int_mask]
+        q_z = img_container_fit.qzqxyboxes[0][int_mask]
+        q_xy = img_container_fit.qzqxyboxes[1][int_mask]
+
+        # second mask
+        mask = is_ring if peaks_type == 'rings' else ~is_ring
+
+        intensity_roi = amplitude[mask]
+        q_2d_roi = np.column_stack((q_xy[mask], q_z[mask]))
+
+        # GLOBAL indices
+        indices_roi = filtered_indices[mask]
+
+        # IMPORTANT: global size
+        n_total = len(amplitude_full)
+
+        unique_solutions = get_unique_solutions(analysis.match_class, peaks_type, threshold, q_xy_max, q_z_max, q_2d_roi,
+                                                frame_num,
+                                                intensity_roi, indices_roi, n_total)
+        if unique_solutions == {}:
+            analysis.container_match_list.append(None)
+            analysis.logger.info(f"No solutions was found. Try to decrease the threshold")
+            continue
+        unique_solutions['peaks_type'] = peaks_type
+        unique_solutions['metadata'] = _set_matching_metadata(
+            probability_threshold=threshold,
+            peaks_type=peaks_type,
+            intensity_threshold=int_min,
+            CIFs=analysis.match_class.config.cif_prepr.cifs,
+            device=analysis.match_class.device,
+        )
+        analysis.container_match_list.append(solution2container(unique_solutions))
+
+
+def _run_matching_from_file(analysis, entry, frame_num, threshold, peaks_type, int_min):
+    if entry is None:
+        for entry in analysis.entry_dict:
+            _run_matching_single_entry(analysis, entry, frame_num, threshold, peaks_type, int_min)
+        return
+    if not entry in analysis.entry_dict:
+        raise ValueError("entry not found in the NeXus file")
+    _run_matching_single_entry(analysis, entry, frame_num, threshold, peaks_type, int_min)
+
+
+def _run_matching_single_entry(analysis, entry, frame_num, threshold, peaks_type, int_min):
+    frame_num_all = analysis.entry_dict[entry]['shape'][0]
+    if frame_num is None:
+        for frame_num in range(frame_num_all):
+            _run_matching_single_frame(analysis, entry, frame_num, threshold, peaks_type, int_min)
+        return
+    if frame_num >= frame_num_all:
+        raise ValueError("frame_num is out of range")
+    _run_matching_single_frame(analysis, entry, frame_num, threshold, peaks_type, int_min)
+
+
+def _run_matching_single_frame(analysis, entry, frame_num, threshold, peaks_type, int_min):
+    unique_solutions = run_mlgidmatch_from_file(analysis.nexus, entry, frame_num, analysis.match_class,
+                                                threshold, peaks_type, int_min)
+    if unique_solutions == {}:
+        analysis.logger.info(f"No solutions for ({analysis.filename}, entry: {entry}, frame: {frame_num}) was found. "
+                         f"Try to decrease threshold")
+        return
+    unique_solutions['peaks_type'] = peaks_type
+    unique_solutions['metadata'] = _set_matching_metadata(
+        threshold=threshold,
+        peaks_type=peaks_type,
+        intensity_min=int_min,
+        cifs=analysis.match_class.config.cif_prepr.cifs,
+        device=analysis.match_class.device,
+    )
+    analysis.unique_solutions = unique_solutions
+    save_match(analysis.filename, entry, frame_num, solution2container(unique_solutions))
+    analysis.logger.info(f"Saved matched peaks to file: {analysis.filename}, entry: {entry}, frame: {frame_num}")
+
+
+def _set_matching_metadata(**kwargs):
+    metadata = {'program': 'mlgidmatch',
+                'version': importlib.metadata.version("mlgidmatch"),
+                'date': datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'),
+                }
+    metadata.update(kwargs)
+    return metadata
+
+
 
 def load_cif_prepr(cif_prepr):
     if isinstance(cif_prepr, str):

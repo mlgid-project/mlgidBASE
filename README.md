@@ -83,20 +83,21 @@ analysis.run_detection(
 analysis.run_fitting(
   entry='entry_0000',           # if read from file
   frame_num=0,                  # if read from file
-  clustering_distance_peaks = 10,
-  clustering_distance_rings = 10,
-  clustering_extend = 2
+  clustering_distance_peaks=10,
+  clustering_distance_rings=10,
+  clustering_extend=2,
+  theta_fixed=False,
 )
 
 # peak matching
 analysis.run_matching(
   entry='entry_0000',           # if read from file
   frame_num=0,                  # if read from file
-  cif_prepr = 'prepr_cifs.pickle',
-  probability_threshold = 0.5,
-  intensity_threshold = 0,
-  peaks_type = 'segments',
-  device = 'cpu'
+  cif_prepr='prepr_cifs.pickle',
+  probability_threshold=0.5,
+  intensity_threshold=0,
+  peaks_type='segments',
+  device='cpu'
 )
 ```
 
@@ -126,6 +127,7 @@ Performs fitting of detected peaks with clustering.
 - `clustering_distance_peaks` (`float`) — Distance threshold for clustering peaks. Defaults to `10`.
 - `clustering_distance_rings` (`float`) — Distance threshold for clustering rings. Defaults to `10`.
 - `clustering_extend` (`float`) — Cluster extension factor. Defaults to `2`.
+- `theta_fixed` (`bool`) - Whether to fix Gaussian tilt angle to 0° (azimuthal direction) during fitting.
 - `use_pool` (`bool`) — Enable multiprocessing. Defaults to `False`.
 - `debug` (`bool`) — Enable debug output. Defaults to `False`.
 

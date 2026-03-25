@@ -12,6 +12,25 @@ from datetime import datetime
 
 
 def _run_detection(analysis, entry=None, frame_num=None, config_detect=None, model_type=None):
+    """
+    Run peak detection on GID data.
+
+    This function applies the mlgiddetect model to either in-memory data or
+    NeXus-stored data, depending on the analysis configuration.
+
+    Parameters
+    ----------
+    analysis : object
+        Analysis object containing data, configuration, and state.
+    entry : str, optional
+        NeXus entry to process. If None, all entries are processed.
+    frame_num : int, optional
+        Frame index to process. If None, all frames are processed.
+    config_detect : str or Config, optional
+        Detection configuration or path to configuration file.
+    model_type : str, optional
+        Model type to use (e.g., 'faster_rcnn', 'detr').
+    """
     if config_detect is not None:
         if analysis.config_detect is not None:
             analysis.logger.info(f"config_detect is already set. The previous config is to be used")
@@ -34,6 +53,14 @@ def _run_detection(analysis, entry=None, frame_num=None, config_detect=None, mod
 
 
 def load_inference(analysis):
+    """
+    Initialize the detection inference model.
+
+    Parameters
+    ----------
+    analysis : object
+        Analysis object containing detection configuration.
+    """
     try:
         analysis.imp_detect = Inference(analysis.config_detect)
     except:
@@ -41,6 +68,14 @@ def load_inference(analysis):
 
 
 def _run_detection_from_memory(analysis):
+    """
+    Run detection on in-memory polar images.
+
+    Parameters
+    ----------
+    analysis : object
+        Analysis object containing polar images and conversion data.
+    """
     analysis.config_detect.GEO_RECIPROCAL_SHAPE = list(analysis.pygid_conversion.img_gid_q[0].shape)
     analysis.config_detect.GEO_PIXELPERANGSTROEM = analysis.config_detect.GEO_RECIPROCAL_SHAPE[0] / np.nanmax(analysis.q_abs)
     analysis.config_detect.GEO_QMAX = np.nanmax(analysis.q_abs)
@@ -57,6 +92,18 @@ def _run_detection_from_memory(analysis):
 
 
 def _run_detection_from_file(analysis, entry, frame_num):
+    """
+    Run detection on data stored in a NeXus file.
+
+    Parameters
+    ----------
+    analysis : object
+        Analysis object with file access.
+    entry : str or None
+        Entry to process. If None, all entries are processed.
+    frame_num : int or None
+        Frame index to process. If None, all frames are processed.
+    """
     if entry is None:
         for entry in analysis.entry_dict:
             _run_detection_single_entry(analysis, entry, frame_num)
@@ -67,6 +114,18 @@ def _run_detection_from_file(analysis, entry, frame_num):
 
 
 def _run_detection_single_entry(analysis, entry, frame_num):
+    """
+    Run detection for a single NeXus entry.
+
+    Parameters
+    ----------
+    analysis : object
+        Analysis object containing NeXus metadata.
+    entry : str
+        Entry name to process.
+    frame_num : int or None
+        Frame index to process. If None, all frames are processed.
+    """
     frame_num_all = analysis.entry_dict[entry]['shape'][0]
     if frame_num is None:
         for frame_num in range(frame_num_all):
@@ -78,6 +137,18 @@ def _run_detection_single_entry(analysis, entry, frame_num):
 
 
 def _run_detection_single_frame(analysis, entry, frame_num):
+    """
+    Run detection for a single frame and save results to file.
+
+    Parameters
+    ----------
+    analysis : object
+        Analysis object containing NeXus file and detection model.
+    entry : str
+        Entry name.
+    frame_num : int
+        Frame index.
+    """
     conversion = read_conversion_from_nexus(analysis.nexus, entry, frame_num)
     img_container_detect = run_mlgiddetect(conversion.img_gid_q[0], conversion.matrix[0].q_xy, conversion.matrix[0].q_z,
                                            analysis.imp_detect, analysis.config_detect)
@@ -87,6 +158,19 @@ def _run_detection_single_frame(analysis, entry, frame_num):
 
 
 def _set_detection_metadata(analysis):
+    """
+    Generate metadata dictionary for detection results.
+
+    Parameters
+    ----------
+    analysis : object
+        Analysis object containing detection configuration.
+
+    Returns
+    -------
+    dict
+        Metadata including program name, version, timestamp, and configuration.
+    """
     metadata = {'program': 'mlgiddetect',
                 'version': importlib.metadata.version("mlgiddetect"),
                 'date': datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'),
@@ -95,6 +179,19 @@ def _set_detection_metadata(analysis):
     return metadata
 
 def load_config(config):
+    """
+    Load and validate detection configuration.
+
+    Parameters
+    ----------
+    config : str, Config, or None
+        Configuration file path, Config object, or None for default.
+
+    Returns
+    -------
+    Config
+        Initialized and validated configuration object.
+    """
     if isinstance(config, Config):
         config.PREPROCESSING_LINEAR_CONTRAST = True
         return config
@@ -111,6 +208,19 @@ def load_config(config):
 
 
 def check_valid_config(config):
+    """
+    Apply default preprocessing settings to configuration.
+
+    Parameters
+    ----------
+    config : Config
+        Configuration object.
+
+    Returns
+    -------
+    Config
+        Updated configuration with enforced defaults.
+    """
     config.PREPROCESSING_CUDA = False
     config.PREPROCESSING_FLIPHORIZONTAL = False
     config.PREPROCESSING_QUAZIPOLAR = False
@@ -123,6 +233,27 @@ def check_valid_config(config):
     return config
 
 def run_mlgiddetect(img, q_xy_axes,q_z_axes, imp, config_detect):
+    """
+    Run peak detection on a reciprocal-space image.
+
+    Parameters
+    ----------
+    img : ndarray
+        2D reciprocal-space image.
+    q_xy_axes : ndarray
+        q_xy axis values.
+    q_z_axes : ndarray
+        q_z axis values.
+    imp : Inference
+        Detection model.
+    config_detect : Config
+        Detection configuration.
+
+    Returns
+    -------
+    ImageContainer
+        Container with detected peaks and metadata.
+    """
     try:
         img_container_detect = ImageContainer()
     except:
@@ -153,6 +284,21 @@ def run_mlgiddetect(img, q_xy_axes,q_z_axes, imp, config_detect):
 
 
 def standard_preprocessing_from_polar(config, raw_polar_img):
+    """
+    Apply preprocessing to a polar-transformed image.
+
+    Parameters
+    ----------
+    config : Config
+        Detection configuration.
+    raw_polar_img : ndarray
+        Input polar image.
+
+    Returns
+    -------
+    tuple of ndarray
+        Preprocessed image, original polar image, and mask.
+    """
     equalized_polar, mask = contrast_correction(config, raw_polar_img)
     equalized_polar = add_batch_and_color_channel(equalized_polar)
     mask = add_batch_and_color_channel(mask)
@@ -167,10 +313,25 @@ def standard_preprocessing_from_polar(config, raw_polar_img):
 
 
 def run_mlgiddetect_from_polar(img, imp, config_detect):
+    """
+    Run detection directly on a polar image.
+
+    Parameters
+    ----------
+    img : ndarray
+        Polar-transformed image.
+    imp : Inference
+        Detection model.
+    config_detect : Config
+        Detection configuration.
+
+    Returns
+    -------
+    ImageContainer
+        Container with detected peaks and metadata.
+    """
     img_container_detect = ImageContainer()
     img_container_detect.config = config_detect
-    # img_container_detect.q_xy = q_xy
-    # img_container_detect.q_z = q_z
     img_container_detect.nr = 0
     img_container_detect.polar_img_shape = img.shape
     (

@@ -95,9 +95,6 @@ def get_plot_params(font_size=14, axes_titlesize=14, axes_labelsize=18, grid=Fal
     }
     return rc_params
 
-def get_plot_context(rc_params):
-    return plt.rc_context(rc=rc_params)
-
 def plot_analysis_results(
                 img, q_xy, q_z,
                 detected_params,
@@ -106,6 +103,49 @@ def plot_analysis_results(
                 return_result, plot_result,
                 clims, xlim, ylim,
                 save_fig, path_to_save_fig):
+    """
+    Plot GID analysis results in reciprocal space.
+
+    Displays the intensity map together with optional overlays of detected peaks,
+    fitted Gaussian components, and matched structural solutions.
+
+    Parameters
+    ----------
+    img : ndarray
+        2D reciprocal-space image (q-space intensity).
+    q_xy : ndarray
+        In-plane momentum transfer values (Å⁻¹).
+    q_z : ndarray
+        Out-of-plane momentum transfer values (Å⁻¹).
+    detected_params : dict
+        Parameters controlling visualization of detected peaks.
+        Must include key ``'plot'`` (bool).
+    fitted_params : dict
+        Parameters controlling visualization of fitted peaks.
+        Must include key ``'plot'`` (bool).
+    matched_params : dict
+        Parameters controlling visualization of matched solutions.
+        Must include key ``'plot'`` (bool).
+    return_result : bool
+        If True, returns the matplotlib image object.
+    plot_result : bool
+        If True, displays the plot.
+    clims : list or None
+        Color limits [min, max] for intensity scaling.
+    xlim : tuple or None
+        Limits for q_xy axis.
+    ylim : tuple or None
+        Limits for q_z axis.
+    save_fig : bool
+        If True, saves the figure to disk.
+    path_to_save_fig : str or None
+        Path to save the figure.
+
+    Returns
+    -------
+    matplotlib.image.AxesImage
+        Image object corresponding to the plotted intensity map.
+    """
     if clims is None:
         clims = [np.nanmin(img[img > 0]), np.nanmax(img)]
 
@@ -164,6 +204,28 @@ def _plot_analysis_results(analysis,
                            return_result, plot_result,
                            clims, xlim, ylim,
                            save_fig, path_to_save_fig):
+    """
+    Dispatch plotting of analysis results from memory or file.
+
+    Parameters
+    ----------
+    analysis : object
+        Analysis object containing data and configuration.
+    detected_params, fitted_params, matched_params : dict
+        Visualization parameter dictionaries.
+    frame_num : int or list or None
+        Frame(s) to plot.
+    entry : str or None
+        NeXus entry name.
+    return_result, plot_result : bool
+        Control return and display behavior.
+    clims, xlim, ylim : optional
+        Plot scaling and axis limits.
+    save_fig : bool
+        Whether to save the figure.
+    path_to_save_fig : str or None
+        Output file path.
+    """
     if not analysis.from_nexus:
         if not entry is None:
             analysis.logger.info(f"entry is ignored when analysis is from memory")
@@ -201,6 +263,31 @@ def _plot_analysis_results_from_memory(analysis,
                                       clims, xlim, ylim,
                                       save_fig, path_to_save_fig
                                       ):
+    """
+    Plot analysis results using in-memory data.
+
+    Iterates over selected frames and overlays detection, fitting,
+    and matching results stored in the analysis object.
+
+    Parameters
+    ----------
+    analysis : object
+        Analysis object with precomputed results.
+    detected_params, fitted_params, matched_params : dict
+        Visualization parameter dictionaries.
+    entry : str
+        Entry identifier (unused, kept for API consistency).
+    frame_num : int, list, or None
+        Frame selection.
+    return_result, plot_result : bool
+        Control return and display behavior.
+    clims, xlim, ylim : optional
+        Plot scaling and axis limits.
+    save_fig : bool
+        Whether to save the figure.
+    path_to_save_fig : str or None
+        Output file path.
+    """
     analysis.check_valid_data(detected_params, fitted_params, matched_params)
 
     if isinstance(frame_num, int):
@@ -271,6 +358,28 @@ def _plot_analysis_results_from_file(analysis,
                                     clims, xlim, ylim,
                                     save_fig, path_to_save_fig
                                     ):
+    """
+    Plot analysis results by reading data from a NeXus file.
+
+    Parameters
+    ----------
+    analysis : object
+        Analysis object with file-backed data.
+    detected_params, fitted_params, matched_params : dict
+        Visualization parameter dictionaries.
+    entry : str or None
+        Entry name to process.
+    frame_num : int, list, or None
+        Frame selection.
+    return_result, plot_result : bool
+        Control return and display behavior.
+    clims, xlim, ylim : optional
+        Plot scaling and axis limits.
+    save_fig : bool
+        Whether to save the figure.
+    path_to_save_fig : str or None
+        Output file path.
+    """
     if entry is None:
         for entry in analysis.entry_dict:
             _plot_analysis_results_single_entry(analysis,
@@ -306,6 +415,20 @@ def _plot_analysis_results_single_entry(analysis,
                                         clims, xlim, ylim,
                                         save_fig, path_to_save_fig
                                         ):
+    """
+    Plot all selected frames for a single NeXus entry.
+
+    Parameters
+    ----------
+    analysis : object
+        Analysis object with file-backed data.
+    entry : str
+        Entry name.
+    frame_num : int, list, or None
+        Frame selection.
+    Other parameters
+        Same as `_plot_analysis_results`.
+    """
     frame_num_all = analysis.entry_dict[entry]['shape'][0]
     if isinstance(frame_num, int):
         frame_num = [frame_num]
@@ -338,6 +461,23 @@ def _plot_analysis_results_single_frame(analysis,
                                         clims, xlim, ylim,
                                         save_fig, path_to_save_fig
                                         ):
+    """
+    Plot a single frame from a NeXus file.
+
+    Loads conversion, detected peaks, fitted peaks, and optionally matched
+    solutions, then visualizes them.
+
+    Parameters
+    ----------
+    analysis : object
+        Analysis object with file-backed data.
+    entry : str
+        Entry name.
+    frame_num : int
+        Frame index.
+    Other parameters
+        Same as `_plot_analysis_results`.
+    """
     conversion = read_conversion_from_nexus(analysis.nexus, entry, frame_num)
     detected_peaks = read_detected_peaks(analysis.nexus, entry, frame_num)
     fitted_peaks, _, _ = read_fitted_peaks(analysis.nexus, entry, frame_num)
@@ -406,7 +546,29 @@ def _plot_single_frame(analysis,
                       return_result, plot_result,
                       clims, xlim, ylim,
                       save_fig, path_to_save_fig):
-    with get_plot_context(analysis.plot_params):
+    """
+    Plot a single frame with analysis overlays using analysis plotting settings.
+
+    Parameters
+    ----------
+    analysis : object
+        Analysis object containing plotting configuration.
+    img : ndarray
+        Image data in reciprocal space.
+    q_xy, q_z : ndarray
+        Reciprocal-space axes.
+    detected_params, fitted_params, matched_params : dict
+        Visualization parameter dictionaries.
+    return_result, plot_result : bool
+        Control return and display behavior.
+    clims, xlim, ylim : optional
+        Plot scaling and axis limits.
+    save_fig : bool
+        Whether to save the figure.
+    path_to_save_fig : str or None
+        Output file path.
+    """
+    with plt.rc_context(rc=analysis.plot_params):
         return plot_analysis_results(
             img, q_xy, q_z,
             detected_params,
@@ -419,6 +581,16 @@ def _plot_single_frame(analysis,
     
     
 def _plot_detected(ax, detected_params):
+    """
+    Overlay detected peak regions on a plot.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to draw on.
+    detected_params : dict
+        Detection parameters including radius, width, and angles.
+    """
     rad = detected_params['radius']
     radw = detected_params['radius_width']
     ang = detected_params['angle']
@@ -434,6 +606,16 @@ def _plot_detected(ax, detected_params):
 
 
 def _plot_fitted(ax, fitted_params):
+    """
+    Overlay fitted Gaussian peak positions and rings.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to draw on.
+    fitted_params : dict
+        Fitting parameters including amplitudes, positions, and types.
+    """
     qxy, qz = np.array(fitted_params["q_xy"]), np.array(fitted_params["q_z"])
     amp, rad, rings = map(np.array, (fitted_params["amplitude"], fitted_params["radius"], fitted_params["is_ring"]))
 
@@ -462,6 +644,18 @@ def _plot_fitted(ax, fitted_params):
 
 
 def _plot_matched(ax, matched_params, fitted_params):
+    """
+    Overlay matched structural solutions on the plot.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to draw on.
+    matched_params : dict
+        Matching results including solutions and visualization settings.
+    fitted_params : dict
+        Fitted peak parameters used for filtering and positioning.
+    """
     qxy, qz = np.array(fitted_params["q_xy"]), np.array(fitted_params["q_z"])
     amp, rad, rings = map(np.array, (fitted_params["amplitude"], fitted_params["radius"], fitted_params["is_ring"]))
     solution = matched_params['solution']

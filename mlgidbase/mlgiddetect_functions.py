@@ -168,7 +168,6 @@ def _run_detection_single_frame(analysis, entry, frame_num):
     save_detect(analysis.filename, entry, frame_num, img_container_detect)
     analysis.logger.info(f"Saved detected peaks to file: {analysis.filename}, entry: {entry}, frame: {frame_num}")
 
-
 def _set_detection_metadata(analysis):
     """
     Generate metadata dictionary for detection results.

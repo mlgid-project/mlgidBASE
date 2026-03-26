@@ -662,7 +662,7 @@ def _place_ring_label(ax, r, ang_deg, idx, _params, tx = None):
     xlim = ax.get_xlim()
     ylim = ax.get_ylim()
     y_top = ylim[1]
-
+    delta_deg = 5
     # --- try intersection with top boundary ---
     if r >= abs(y_top):
         x_candidate = np.sqrt(max(r**2 - y_top**2, 0))
@@ -672,15 +672,23 @@ def _place_ring_label(ax, r, ang_deg, idx, _params, tx = None):
                 y = y_top
 
                 angle = np.degrees(np.arctan2(y, x))
-                rotation = angle - 90
 
-                ax.text(x, y, str(idx),
+                # --- move along the ring ---
+                new_angle = angle - delta_deg  # "down" along circle
+                theta = np.radians(new_angle)
+
+                x_new = r * np.cos(theta)
+                y_new = r * np.sin(theta)
+
+                rotation = new_angle - 90
+
+                ax.text(x_new, y_new, str(idx),
                         ha='center', va='center',
                         fontsize=_params.get('text_size', 8),
                         color=tx,
                         rotation=rotation,
                         rotation_mode='anchor',
-                        clip_on=True,)
+                        clip_on=True)
                 return
 
     # --- fallback: regular arc placement ---

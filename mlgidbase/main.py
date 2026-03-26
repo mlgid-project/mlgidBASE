@@ -2,11 +2,13 @@ import os
 from typing import Any, Optional
 import logging
 
-from .pygid_functions import (get_nexus, save_pipeline, det2pol_gid_pygid, det2q_gid_pygid, _delete_peak)
+from .pygid_functions import (get_nexus, save_pipeline, det2pol_gid_pygid, det2q_gid_pygid)
 from .mlgiddetect_functions import _run_detection
 from .pygidfit_functions import _run_fitting
 from .mlgidmatch_functions import _run_matching
 from .visualization import get_plot_params, _plot_analysis_results
+from .peak_operations import _delete_peak
+from .nexus_operations import _get_detected_peaks, _get_fitted_peaks, _get_matched_peaks
 from mlgidmatch.preprocess.cif_preprocess import CifPattern
 
 
@@ -464,3 +466,12 @@ class mlgidBASE:
                              "Use plotting before saving.")
     def delete_peak(self, entry=None, frame_num=None, peak_id = None):
         _delete_peak(self, entry=entry, frame_num=frame_num, peak_id=peak_id)
+
+    def get_detected_peaks(self, entry=None, frame_num=None):
+        return _get_detected_peaks(self.nexus, entry=entry, frame_num=frame_num)
+
+    def get_fitted_peaks(self, entry=None, frame_num=None):
+        return _get_fitted_peaks(self.nexus, entry=entry, frame_num=frame_num)
+
+    def get_matched_peaks(self, entry=None, frame_num=None):
+        return _get_matched_peaks(self.nexus, entry=entry, frame_num=frame_num)

@@ -244,7 +244,120 @@ def read_fitted_peaks(nexus, entry, frame_num):
             np.nanmax(nexus.get_dataset(f"/{entry}/data/q_z")),
             )
 
-def read_matched_data(filename, entry, frame_num):
+def read_fitted_peaks_errors(nexus, entry, frame_num):
+    """
+    Read fitted peaks and q-range information from a NeXus file.
+
+    Parameters
+    ----------
+    nexus : pygid.NexusFile
+        Opened NeXus file.
+    entry : str
+        Entry name.
+    frame_num : int
+        Frame index.
+
+    Returns
+    -------
+    tuple
+        Fitted peaks dataset, max q_xy, max q_z.
+    """
+    group_name = f"/{entry}/data/analysis/frame{str(frame_num).zfill(5)}"
+    entry_dict = nexus.entry_dict
+    if not entry in entry_dict:
+        raise KeyError(f"entry {entry} not in the file. The file structure: {entry_dict}")
+    return nexus.get_dataset(f"{group_name}/fitted_peaks_errors")
+
+def _delete_peak(analysis, entry, frame_num, peak_id):
+    if not analysis.from_nexus:
+        print("deleting peak from memory is not supported")
+    else:
+        _delete_peak_from_file(analysis, entry, frame_num, peak_id)
+
+def _delete_peak_from_file(analysis, entry, frame_num, peak_id):
+    if entry is None:
+        for entry in analysis.entry_dict:
+            _delete_peak_single_entry(analysis, entry, frame_num, peak_id)
+        return
+    elif isinstance(entry, list):
+        for e in entry:
+            if not e in analysis.entry_dict:
+                raise ValueError("entry not found in the NeXus file")
+            _delete_peak_single_entry(analysis, e, frame_num, peak_id)
+    else:
+        if not entry in analysis.entry_dict:
+            raise ValueError("entry not found in the NeXus file")
+        _delete_peak_single_entry(analysis, entry, frame_num, peak_id)
+
+def _delete_peak_single_entry(analysis, entry, frame_num, peak_id):
+    frame_num_all = analysis.entry_dict[entry]['shape'][0]
+    if frame_num is None:
+        for frame_num in range(frame_num_all):
+            _delete_peak_single_frame(analysis, entry, frame_num, peak_id)
+        return
+    elif isinstance(frame_num, list):
+        for f in frame_num:
+            if f >= frame_num_all:
+                raise ValueError("frame_num is out of range")
+            _delete_peak_single_frame(analysis, entry, f, peak_id)
+    else:
+        if frame_num >= frame_num_all:
+            raise ValueError("frame_num is out of range")
+        _delete_peak_single_frame(analysis, entry, frame_num, peak_id)
+
+def _delete_peak_single_frame(analysis, entry, frame_num, peak_id):
+    try:
+        _delete_detected_peak(analysis, entry, frame_num, peak_id)
+    except ValueError:
+        analysis.logger.info(f"No detected peak {peak_id} for entry {entry}; frame_num {frame_num}")
+
+    try:
+        _delete_fitted_peaks(analysis, entry, frame_num, peak_id)
+    except ValueError:
+        analysis.logger.info(f"No fitted peak {peak_id} for entry {entry}; frame_num {frame_num}")
+
+    try:
+        _delete_matched_peaks(analysis, entry, frame_num, peak_id)
+    except ValueError:
+        analysis.logger.info(f"No matched peak {peak_id} for entry {entry}; frame_num {frame_num}")
+
+
+
+
+
+def _delete_detected_peak(analysis, entry, frame_num, peak_id):
+    detected_peaks = read_detected_peaks(analysis.nexus, entry, frame_num)
+    detected_peaks = detected_peaks[detected_peaks['id'] != peak_id]
+    detected_peaks['id'] = np.arange(len(detected_peaks))
+    analysis.nexus.change_dataset(f"/{entry}/data/analysis/frame{str(frame_num).zfill(5)}/detected_peaks",
+                                  data=detected_peaks,
+                                  )
+
+def _delete_fitted_peaks(analysis, entry, frame_num, peak_id):
+    fitted_peaks, _, _ = read_fitted_peaks(analysis.nexus, entry, frame_num)
+    fitted_peaks = fitted_peaks[fitted_peaks['id'] != peak_id]
+    fitted_peaks['id'] = np.arange(len(fitted_peaks))
+    fitted_peaks_errors = read_fitted_peaks_errors(analysis.nexus, entry, frame_num)
+    fitted_peaks_errors = fitted_peaks_errors[fitted_peaks_errors['id'] != peak_id]
+    fitted_peaks_errors['id'] = np.arange(len(fitted_peaks_errors))
+
+    analysis.nexus.change_dataset(f"/{entry}/data/analysis/frame{str(frame_num).zfill(5)}/fitted_peaks",
+                                  data=fitted_peaks,
+                                  )
+    analysis.nexus.change_dataset(f"/{entry}/data/analysis/frame{str(frame_num).zfill(5)}/fitted_peaks_errors",
+                                  data=fitted_peaks_errors,
+                                  )
+
+def _delete_matched_peaks(analysis, entry, frame_num, peak_id):
+    res = read_matched_data(analysis.filename, entry, frame_num, convert2sol = False)
+    for name, sol in res:
+        for i in range(len(sol['peak_list'])):
+            sol['peak_list'][i] = np.array([int(x - 1) if x > peak_id else int(x) for x in sol['peak_list'][i] if x != peak_id])
+        analysis.nexus.change_dataset(f"/{entry}/data/analysis/frame{str(frame_num).zfill(5)}/{name}",
+                                      data=sol)
+
+
+def read_matched_data(filename, entry, frame_num, convert2sol = True):
     """
     Read matched structural solutions from a NeXus file.
 
@@ -256,6 +369,8 @@ def read_matched_data(filename, entry, frame_num):
         Entry name.
     frame_num : int
         Frame index.
+    convert2sol: bool
+        Whether convert to solution.
 
     Returns
     -------
@@ -270,7 +385,10 @@ def read_matched_data(filename, entry, frame_num):
         grp = f[group_name]
         for name in grp.keys():
             if name.startswith("matched_"):
-                solutions.append((name, dataset2sol(grp[name])))
+                if convert2sol:
+                    solutions.append((name, dataset2sol(grp[name])))
+                else:
+                    solutions.append((name, grp[name][()]))
         return solutions
 
 def dataset2sol(dataset):

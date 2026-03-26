@@ -95,6 +95,63 @@ def get_plot_params(font_size=14, axes_titlesize=14, axes_labelsize=18, grid=Fal
     }
     return rc_params
 
+
+def _plot_analysis_results(analysis,
+                           detected_params,
+                           fitted_params,
+                           matched_params,
+                           frame_num, entry,
+                           return_result, plot_result,
+                           clims, xlim, ylim,
+                           save_fig, path_to_save_fig):
+    """
+    Dispatch plotting of analysis results from memory or file.
+
+    Parameters
+    ----------
+    analysis : object
+        Analysis object containing data and configuration.
+    detected_params, fitted_params, matched_params : dict
+        Visualization parameter dictionaries.
+    frame_num : int or list or None
+        Frame(s) to plot.
+    entry : str or None
+        NeXus entry name.
+    return_result, plot_result : bool
+        Control return and display behavior.
+    clims, xlim, ylim : optional
+        Plot scaling and axis limits.
+    save_fig : bool
+        Whether to save the figure.
+    path_to_save_fig : str or None
+        Output file path.
+    """
+    if not analysis.from_nexus:
+        if not entry is None:
+            analysis.logger.info(f"entry is ignored when analysis is from memory")
+        entry = 'entry_0000'
+        _plot_analysis_results_from_memory(
+            analysis,
+            detected_params,
+            fitted_params,
+            matched_params,
+            entry,
+            frame_num,
+            return_result, plot_result,
+            clims, xlim, ylim,
+            save_fig, path_to_save_fig
+        )
+    else:
+        _plot_analysis_results_from_file(
+            analysis,
+            detected_params,
+            fitted_params,
+            matched_params,
+            entry, frame_num,
+            return_result, plot_result,
+            clims, xlim, ylim,
+            save_fig, path_to_save_fig)
+
 def plot_analysis_results(
                 img, q_xy, q_z,
                 detected_params,
@@ -194,64 +251,6 @@ def plot_analysis_results(
     if plot_result:
         plt.show()
     return p
-
-
-def _plot_analysis_results(analysis,
-                           detected_params,
-                           fitted_params,
-                           matched_params,
-                           frame_num, entry,
-                           return_result, plot_result,
-                           clims, xlim, ylim,
-                           save_fig, path_to_save_fig):
-    """
-    Dispatch plotting of analysis results from memory or file.
-
-    Parameters
-    ----------
-    analysis : object
-        Analysis object containing data and configuration.
-    detected_params, fitted_params, matched_params : dict
-        Visualization parameter dictionaries.
-    frame_num : int or list or None
-        Frame(s) to plot.
-    entry : str or None
-        NeXus entry name.
-    return_result, plot_result : bool
-        Control return and display behavior.
-    clims, xlim, ylim : optional
-        Plot scaling and axis limits.
-    save_fig : bool
-        Whether to save the figure.
-    path_to_save_fig : str or None
-        Output file path.
-    """
-    if not analysis.from_nexus:
-        if not entry is None:
-            analysis.logger.info(f"entry is ignored when analysis is from memory")
-        entry = 'entry_0000'
-        _plot_analysis_results_from_memory(
-            analysis,
-            detected_params,
-            fitted_params,
-            matched_params,
-            entry,
-            frame_num,
-            return_result, plot_result,
-            clims, xlim, ylim,
-            save_fig, path_to_save_fig
-        )
-    else:
-        _plot_analysis_results_from_file(
-            analysis,
-            detected_params,
-            fitted_params,
-            matched_params,
-            entry, frame_num,
-            return_result, plot_result,
-            clims, xlim, ylim,
-            save_fig, path_to_save_fig)
-
 
 def _plot_analysis_results_from_memory(analysis,
                                       detected_params,
@@ -515,6 +514,10 @@ def _plot_analysis_results_single_frame(analysis,
         matched_params['num'] = frame_num
         for sol_ind in range(len(container_matched)):
             field_name, sol = container_matched[sol_ind]
+            if field_name.startswith('matched_rings') and not matched_params['plot_rings']:
+                continue
+            if field_name.startswith('matched_segments') and not matched_params['plot_segments']:
+                continue
             path_to_save_fig_modif = f"{name}_{entry}_fr_{frame_num:04d}_sol_{sol_ind:04d}{fmt}"
             matched_params['solution'] = sol
             matched_params['field_name'] = field_name
@@ -596,31 +599,40 @@ def _plot_detected(ax, detected_params):
     ang = detected_params['angle']
     angw = detected_params['angle_width']
 
-    for r, dr, a, da in zip(rad, radw, ang, angw):
+    for i, (r, dr, a, da) in enumerate(zip(rad, radw, ang, angw)):
         for sign in (-1, +1):
             ax.add_patch(Arc((0, 0), 2 * (r + sign * dr), 2 * (r + sign * dr),
                              theta1=a - da, theta2=a + da,
                              lw=detected_params.get('line_width', 0.5),
                              ls=detected_params.get('line_style', "--"),
-                             color=detected_params.get('line_color', "black"), ))
+                             color=detected_params.get('line_color', "black")))
+        if detected_params.get('plot_id', False):
+            x = r * np.cos(np.deg2rad(a))
+            y = r * np.sin(np.deg2rad(a))
 
+            ax.text(x, y, str(i),
+                    ha='center', va='center',
+                    fontsize=detected_params.get('text_size', 8),
+                    color=detected_params.get('text_color', "black"),
+                    clip_on=True,)
 
 def _plot_fitted(ax, fitted_params):
-    """
-    Overlay fitted Gaussian peak positions and rings.
-
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axes to draw on.
-    fitted_params : dict
-        Fitting parameters including amplitudes, positions, and types.
-    """
     qxy, qz = np.array(fitted_params["q_xy"]), np.array(fitted_params["q_z"])
-    amp, rad, rings = map(np.array, (fitted_params["amplitude"], fitted_params["radius"], fitted_params["is_ring"]))
+    amp, rad, rings = map(np.array, (
+        fitted_params["amplitude"],
+        fitted_params["radius"],
+        fitted_params["is_ring"]
+    ))
 
     # scatter non-rings
     mask = ~rings
+    if fitted_params.get('plot_segments', True):
+        _plot_fitted_peaks(ax, fitted_params, mask, amp, qxy, qz)
+
+    if fitted_params.get('plot_rings', False):
+        _plot_fitted_rings(ax, fitted_params, rings, amp, rad)
+
+def _plot_fitted_peaks(ax, fitted_params, mask, amp, qxy, qz):
     if mask.any():
         norm = LogNorm(vmin=max(amp[mask].min(), 1e-3), vmax=amp[mask].max())
         cmap = plt.get_cmap(fitted_params.get('marker_edgecolor', 'bone'))
@@ -629,19 +641,80 @@ def _plot_fitted(ax, fitted_params):
         ax.scatter(
             qxy[mask],
             qz[mask],
-            facecolors=fitted_params.get('marker_facecolor', 'none'),  # hollow inside
-            edgecolors=colors,  # color rings according to amp
+            facecolors=fitted_params.get('marker_facecolor', 'none'),
+            edgecolors=colors,
             marker=fitted_params.get('marker', 'o'),
             s=fitted_params.get('marker_size', 50),
         )
+        # --- labels inside scatter ---
+        if fitted_params.get('plot_id', False):
+            idx_non_ring = np.where(mask)[0]
+            for i, x, y in zip(idx_non_ring, qxy[mask], qz[mask]):
+                ax.text(x, y, str(i),
+                        ha='center', va='center',
+                        fontsize=fitted_params.get('text_size', 8),
+                        color=fitted_params.get('text_color', "black"),
+                        clip_on=True,)
 
-    # draw rings
+def _place_ring_label(ax, r, ang_deg, idx, _params, tx = None):
+    if tx is None:
+        tx = _params.get('text_color', "black")
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
+    y_top = ylim[1]
+
+    # --- try intersection with top boundary ---
+    if r >= abs(y_top):
+        x_candidate = np.sqrt(max(r**2 - y_top**2, 0))
+
+        for x in (x_candidate, -x_candidate):
+            if xlim[0] <= x <= xlim[1]:
+                y = y_top
+
+                angle = np.degrees(np.arctan2(y, x))
+                rotation = angle - 90
+
+                ax.text(x, y, str(idx),
+                        ha='center', va='center',
+                        fontsize=_params.get('text_size', 8),
+                        color=tx,
+                        rotation=rotation,
+                        rotation_mode='anchor',
+                        clip_on=True,)
+                return
+
+    # --- fallback: regular arc placement ---
+    ang_rad = np.deg2rad(ang_deg)
+    x = r * np.cos(ang_rad)
+    y = r * np.sin(ang_rad)
+    rotation = ang_deg - 90
+
+    ax.text(x, y, str(idx),
+            ha='center', va='center',
+            fontsize=_params.get('text_size', 8),
+            color=tx,
+            rotation=rotation,
+            rotation_mode='anchor',
+            clip_on=True,)
+
+
+def _plot_fitted_rings(ax, fitted_params, rings, amp, rad):
     plt_color = plt.get_cmap(fitted_params.get('line_color', 'bone'))
-    for r, a in zip(rad[rings], amp[rings]):
-        ax.add_patch(Arc((0, 0), 2 * r, 2 * r, theta1=0, theta2=90,
-                         color=plt_color(np.log10(max(a, 1e-3)) / np.log10(amp[rings].max())),
-                         lw=fitted_params.get('line_width', 1), ls=fitted_params.get('line_style', '--')))
+    max_amp = amp[rings].max() if rings.any() else 1
 
+    idx_ring = np.where(rings)[0]
+    angles_deg = np.linspace(5, 90, len(idx_ring), endpoint=True)
+
+    for i, r, a, ang_deg in zip(idx_ring, rad[rings], amp[rings], angles_deg):
+        color = plt_color(np.log10(max(a, 1e-3)) / np.log10(max_amp))
+
+        ax.add_patch(Arc((0, 0), 2 * r, 2 * r, theta1=0, theta2=90,
+                         color=color,
+                         lw=fitted_params.get('line_width', 1),
+                         ls=fitted_params.get('line_style', '--')))
+
+        if fitted_params.get('plot_id', False):
+            _place_ring_label(ax, r, ang_deg, i, fitted_params)
 
 def _plot_matched(ax, matched_params, fitted_params):
     """
@@ -660,31 +733,26 @@ def _plot_matched(ax, matched_params, fitted_params):
     amp, rad, rings = map(np.array, (fitted_params["amplitude"], fitted_params["radius"], fitted_params["is_ring"]))
     solution = matched_params['solution']
 
-    marker_cycle = cycle(matched_params.get('marker', ['o', 'x', 's']))
-    size_cycle = cycle(matched_params.get('marker_size', [50]))
-    face_cycle = cycle(matched_params.get('marker_facecolor', ['none']))
-    edge_cycle = cycle(matched_params.get('marker_edgecolor', ['blue', 'green', 'red']))
-    lw_cycle = cycle(matched_params.get('line_width', [1]))
-    ls_cycle = cycle(matched_params.get('line_style', ['--']))
-    lc_cycle = cycle(matched_params.get('line_color', ['blue', 'green', 'red']))
     intensity_threshold = fitted_params.get('intensity_threshold', 0)
     probability_threshold = matched_params.get('probability_threshold', 0)
 
     legend_flag = matched_params.get('legend', False)
 
+    marker_cycle = cycle(matched_params.get('marker', ['o', 'x', 's']))
+    size_cycle = cycle(matched_params.get('marker_size', [50]))
+    face_cycle = cycle(matched_params.get('marker_facecolor', ['none']))
+    edge_cycle = cycle(matched_params.get('marker_edgecolor', ['blue', 'green', 'red']))
+
+    lw_cycle = cycle(matched_params.get('line_width', [1]))
+    ls_cycle = cycle(matched_params.get('line_style', ['--']))
+    lc_cycle = cycle(matched_params.get('line_color', ['blue', 'green', 'red']))
+    tx_cycle = cycle(matched_params.get('text_color', ['green', 'black', 'blue']))
+
+    angles_deg = np.linspace(5, 90, len(amp[rings]), endpoint=True)
+
     for cif, h, k, l, probability, ind_list in solution:
         if probability < probability_threshold:
             continue
-
-        marker = next(marker_cycle)
-        marker_size = next(size_cycle)
-        marker_face = next(face_cycle)
-        marker_edge = next(edge_cycle)
-
-        lw = next(lw_cycle)
-        ls = next(ls_cycle)
-        lc = next(lc_cycle)
-
         ind_list = np.asarray(ind_list)
 
         ring_idx = ind_list[rings[ind_list]]
@@ -693,62 +761,95 @@ def _plot_matched(ax, matched_params, fitted_params):
         ring_idx = [i for i in ring_idx if amp[i] > intensity_threshold]
         peak_idx = [i for i in peak_idx if amp[i] > intensity_threshold]
 
-        label = f"{cif.decode().split('.')[0]} {int(h), int(k), int(l)} {np.round(float(probability), 3)}"
-
-        # ---- peaks ----
-        if len(peak_idx) > 0:
-
-            if marker_edge in plt.colormaps():
-                norm = LogNorm(vmin=max(amp[peak_idx].min(), 1e-3), vmax=amp[peak_idx].max())
-                cmap = plt.get_cmap(marker_edge)
-                colors = cmap(norm(amp[peak_idx]))
-            else:
-                colors = marker_edge
-
-            ax.scatter(
-                qxy[peak_idx],
-                qz[peak_idx],
-                facecolors=marker_face,
-                edgecolors=colors,
-                marker=marker,
-                s=marker_size,
-                label=label
-            )
+        # ---- segments ----
+        if matched_params.get('plot_segments', False) and len(peak_idx) > 0:
+            label = f"{cif.decode().split('.')[0]} {int(h), int(k), int(l)} {np.round(float(probability), 3)}"
+            _plot_matched_segments(ax, matched_params, label, peak_idx, amp, qxy, qz,
+                                   marker_cycle, size_cycle, face_cycle, edge_cycle, tx_cycle)
 
         # ---- rings ----
-        label = f"{cif.decode().split('.')[0]} {np.round(float(probability), 3)}"
-        if len(ring_idx) > 0:
-
-            if lc in plt.colormaps():
-                cmap = plt.get_cmap(lc)
-                max_amp = amp[ring_idx].max()
-            else:
-                cmap = None
-
-            for i in ring_idx:
-
-                r = rad[i]
-                a = amp[i]
-
-                if cmap is not None:
-                    color = cmap(np.log10(max(a, 1e-3)) / np.log10(max_amp))
-                else:
-                    color = lc
-
-                ax.add_patch(
-                    Arc(
-                        (0, 0),
-                        2 * r,
-                        2 * r,
-                        theta1=0,
-                        theta2=90,
-                        color=color,
-                        lw=lw,
-                        ls=ls,
-                        label=label
-                    )
-                )
-                label = None
+        if matched_params.get('plot_rings', False) and len(ring_idx) > 0:
+            label = f"{cif.decode().split('.')[0]} {np.round(float(probability), 3)}"
+            _plot_matched_rings(ax, matched_params, label, ring_idx, amp, rad, angles_deg,
+                                lw_cycle, ls_cycle, lc_cycle, tx_cycle)
     if legend_flag:
         ax.legend()
 
+
+def _plot_matched_segments(ax, matched_params, label, peak_idx, amp, qxy, qz,
+                           marker_cycle, size_cycle, face_cycle, edge_cycle, tx_cycle):
+
+    marker = next(marker_cycle)
+    marker_size = next(size_cycle)
+    marker_face = next(face_cycle)
+    marker_edge = next(edge_cycle)
+    tx = next(tx_cycle)
+
+    if marker_edge in plt.colormaps():
+        norm = LogNorm(vmin=max(amp[peak_idx].min(), 1e-3), vmax=amp[peak_idx].max())
+        cmap = plt.get_cmap(marker_edge)
+        colors = cmap(norm(amp[peak_idx]))
+    else:
+        colors = marker_edge
+
+    ax.scatter(
+        qxy[peak_idx],
+        qz[peak_idx],
+        facecolors=marker_face,
+        edgecolors=colors,
+        marker=marker,
+        s=marker_size,
+        label=label
+    )
+
+    if matched_params.get('plot_id', False):
+        for i in peak_idx:
+            ax.text(qxy[i], qz[i], str(i),
+                    ha='center', va='center',
+                    fontsize=matched_params.get('text_size', 8),
+                    clip_on=True,
+                    color=tx)
+
+
+def _plot_matched_rings(ax, matched_params, label, ring_idx, amp, rad, angles_deg,
+                                lw_cycle, ls_cycle, lc_cycle, tx_cycle):
+
+    lw = next(lw_cycle)
+    ls = next(ls_cycle)
+    lc = next(lc_cycle)
+    tx = next(tx_cycle)
+
+
+    if lc in plt.colormaps():
+        cmap = plt.get_cmap(lc)
+        max_amp = amp[ring_idx].max()
+    else:
+        cmap = None
+
+    for i, ind in enumerate(ring_idx):
+
+        r = rad[ind]
+        a = amp[ind]
+        ang_deg = angles_deg[i]
+
+        if cmap is not None:
+            color = cmap(np.log10(max(a, 1e-3)) / np.log10(max_amp))
+        else:
+            color = lc
+
+        ax.add_patch(
+            Arc(
+                (0, 0),
+                2 * r,
+                2 * r,
+                theta1=0,
+                theta2=90,
+                color=color,
+                lw=lw,
+                ls=ls,
+                label=label
+            )
+        )
+        label = None
+        if matched_params.get('plot_id', False):
+            _place_ring_label(ax, r, ang_deg, ind, matched_params, tx)

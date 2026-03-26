@@ -108,9 +108,15 @@ def _run_detection_from_file(analysis, entry, frame_num):
         for entry in analysis.entry_dict:
             _run_detection_single_entry(analysis, entry, frame_num)
         return
-    if not entry in analysis.entry_dict:
-        raise ValueError("entry not found in the NeXus file")
-    _run_detection_single_entry(analysis, entry, frame_num)
+    elif isinstance(entry, list):
+        for e in entry:
+            if not e in analysis.entry_dict:
+                raise ValueError("entry not found in the NeXus file")
+            _run_detection_single_entry(analysis, e, frame_num)
+    else:
+        if not entry in analysis.entry_dict:
+            raise ValueError("entry not found in the NeXus file")
+        _run_detection_single_entry(analysis, entry, frame_num)
 
 
 def _run_detection_single_entry(analysis, entry, frame_num):
@@ -131,9 +137,15 @@ def _run_detection_single_entry(analysis, entry, frame_num):
         for frame_num in range(frame_num_all):
             _run_detection_single_frame(analysis, entry, frame_num)
         return
-    if frame_num >= frame_num_all:
-        raise ValueError("frame_num is out of range")
-    _run_detection_single_frame(analysis, entry, frame_num)
+    elif isinstance(frame_num, list):
+        for f in frame_num:
+            if f >= frame_num_all:
+                raise ValueError("frame_num is out of range")
+            _run_detection_single_frame(analysis, entry, f)
+    else:
+        if frame_num >= frame_num_all:
+            raise ValueError("frame_num is out of range")
+        _run_detection_single_frame(analysis, entry, frame_num)
 
 
 def _run_detection_single_frame(analysis, entry, frame_num):

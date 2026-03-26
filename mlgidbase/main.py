@@ -2,7 +2,7 @@ import os
 from typing import Any, Optional
 import logging
 
-from .pygid_functions import (get_nexus, save_pipeline, det2pol_gid_pygid, det2q_gid_pygid)
+from .pygid_functions import (get_nexus, save_pipeline, det2pol_gid_pygid, det2q_gid_pygid, _delete_peak)
 from .mlgiddetect_functions import _run_detection
 from .pygidfit_functions import _run_fitting
 from .mlgidmatch_functions import _run_matching
@@ -350,6 +350,9 @@ class mlgidBASE:
                               detected_params={'line_width': 0.5,
                                                'line_style': "--",
                                                'line_color': "black",
+                                               'plot_id': True,
+                                               'text_color': 'white',
+                                               'text_size': 8,
                                                'plot': True},
                               fitted_params={'plot_segments': True,
                                              'marker': 'o',
@@ -360,6 +363,9 @@ class mlgidBASE:
                                              'line_width': 1,
                                              'line_style': "--",
                                              'line_color': "bone",
+                                             'plot_id': True,
+                                             'text_color': 'white',
+                                             'text_size': 8,
                                              'plot': True},
                               matched_params={
                                   'solution': None,
@@ -372,8 +378,11 @@ class mlgidBASE:
                                   'line_width': [1, 1, 1],
                                   'line_style': ["--", "--", "--"],
                                   'line_color': ["bone", 'blue', 'green'],
-                                  'plot': True,
-                                  'legend': True},
+                                  'plot_id': True,
+                                  'text_color': 'white',
+                                  'text_size': 8,
+                                  'legend': True,
+                                  'plot': True,},
                               frame_num=None, entry=None,
                               return_result=False, plot_result=True,
                               clims=None, xlim=(None, None), ylim=(None, None),
@@ -453,3 +462,5 @@ class mlgidBASE:
         if not hasattr(self.pygid_conversion, 'img_gid_q'):
             raise ValueError("img_gid_q is not available in pygid.Conversion."
                              "Use plotting before saving.")
+    def delete_peak(self, entry=None, frame_num=None, peak_id = None):
+        _delete_peak(self, entry=entry, frame_num=frame_num, peak_id=peak_id)

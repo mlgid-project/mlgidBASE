@@ -152,9 +152,15 @@ def _run_matching_from_file(analysis, entry, frame_num, threshold, peaks_type, i
         for entry in analysis.entry_dict:
             _run_matching_single_entry(analysis, entry, frame_num, threshold, peaks_type, int_min)
         return
-    if not entry in analysis.entry_dict:
-        raise ValueError("entry not found in the NeXus file")
-    _run_matching_single_entry(analysis, entry, frame_num, threshold, peaks_type, int_min)
+    elif isinstance(entry, list):
+        for e in entry:
+            if not e in analysis.entry_dict:
+                raise ValueError("entry not found in the NeXus file")
+            _run_matching_single_entry(analysis, e, frame_num, threshold, peaks_type, int_min)
+    else:
+        if not entry in analysis.entry_dict:
+            raise ValueError("entry not found in the NeXus file")
+        _run_matching_single_entry(analysis, entry, frame_num, threshold, peaks_type, int_min)
 
 
 def _run_matching_single_entry(analysis, entry, frame_num, threshold, peaks_type, int_min):
@@ -184,9 +190,15 @@ def _run_matching_single_entry(analysis, entry, frame_num, threshold, peaks_type
         for frame_num in range(frame_num_all):
             _run_matching_single_frame(analysis, entry, frame_num, threshold, peaks_type, int_min)
         return
-    if frame_num >= frame_num_all:
-        raise ValueError("frame_num is out of range")
-    _run_matching_single_frame(analysis, entry, frame_num, threshold, peaks_type, int_min)
+    elif isinstance(frame_num, list):
+        for f in frame_num:
+            if f >= frame_num_all:
+                raise ValueError("frame_num is out of range")
+            _run_matching_single_frame(analysis, entry, f, threshold, peaks_type, int_min)
+    else:
+        if frame_num >= frame_num_all:
+            raise ValueError("frame_num is out of range")
+        _run_matching_single_frame(analysis, entry, frame_num, threshold, peaks_type, int_min)
 
 
 def _run_matching_single_frame(analysis, entry, frame_num, threshold, peaks_type, int_min):

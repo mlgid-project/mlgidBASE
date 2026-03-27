@@ -1,0 +1,26 @@
+GENERAL:
+  DEBUG: True
+
+MODEL:
+  TYPE: 'faster_rcnn'
+  REDOWNLOAD: False
+  FORCE_CPU: False
+#  ONNX_PATH: '/home/mymodel.onnx'
+
+PREPROCESSING:
+  CUDA: False
+  FLIPHORIZONTAL: False
+  QUAZIPOLAR: True
+  LINEAR_CONTRAST: True
+  LINEAR_PERC_977: False
+  NO_CONTRASTCORRECTION: False
+  POLAR_SHAPE: [512,1024]
+  POLAR_CONVERSION: True
+
+INPUT:
+  IMGPATH: './inputs/w4_mapbbr32.tif'
+  #DATASET: '/home/testuser/38_labeled.h5'
+  LABELED: False
+
+OUTPUT:
+  FOLDER: './outputs'

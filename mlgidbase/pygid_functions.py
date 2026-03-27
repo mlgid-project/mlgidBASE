@@ -353,3 +353,4 @@ def check_valid_conversion(conversion):
     if not hasattr(conversion.matrix[0], "q_z"):
         raise TypeError("pygid.Conversion is not valid. Attribute q_z is not calculated")
     return
+

@@ -1,16 +1,34 @@
 # mlgidBASE
 
-`mlgidBASE` is a package dedicated to machine learning–based analysis of grazing-incidence wide-angle X-ray scattering (GIWAXS) data.
+`mlgidBASE` is a Python package for machine learning–driven analysis of grazing-incidence wide-angle X-ray scattering (GIWAXS) data. It provides a full workflow from peak detection to matching with known crystal structures.
 
-The package builds upon:
+The package builds on the following components:
 
-- [mlgidDETECT](https://github.com/mlgid-project/mlgidDETECT) for peak detection  
-- [pygidFIT](https://github.com/mlgid-project/pygidFIT) for two-dimensional peak fitting  
-- [mlgidMATCH](https://github.com/mlgid-project/mlgidMATCH_private) for matching experimental peaks with known structures  
+- [mlgidDETECT](https://github.com/mlgid-project/mlgidDETECT) — for peak detection  
+- [pygidFIT](https://github.com/mlgid-project/pygidFIT) — for two-dimensional peak fitting  
+- [mlgidMATCH](https://github.com/mlgid-project/mlgidMATCH_private) — for matching experimental peaks to known structures  
 
-`mlgidBASE` can be used after data conversion performed with [pygid](https://github.com/mlgid-project/pygid), either:
-- before saving (for faster data access), or  
-- after saving as a NeXus file.
+---
+
+## Key Features
+
+- **Initialization**  
+  Can be created from a [`pygid.Conversion`](./docs/tutorials/tutorial_05_from_memory.ipynb) object or loaded directly from a [NeXus file](./docs/tutorials/tutorial_01_initialization.ipynb).
+
+- **Methods**  
+  Provides functions for:
+  - [Peak detection](./docs/tutorials/tutorial_02_detection.ipynb)  
+  - [Peak fitting](./docs/tutorials/tutorial_03_fitting.ipynb)  
+  - [Peak matching](./docs/tutorials/tutorial_04_matching.ipynb)
+
+- **Visualization**  
+  Supports [visualization](./docs/tutorials/tutorial_06_visualization.ipynb) at all stages of the analysis pipeline.
+
+- **Peak Adjustment**  
+  Includes functions to [add or delete peaks](./docs/tutorials/tutorial_07_peak_operations.ipynb), either interactively or programmatically.
+
+- **Data Access**  
+  Enables [retrieving analysis results](./docs/tutorials/tutorial_08_get_data.ipynb) from the NeXus file for further processing.
 
 ---
 
@@ -40,216 +58,35 @@ pip install -e .
 
 ---
 
-## How to Use (Short Version)
+---
 
+## How to Use
 
+For full details, see the dedicated [tutorials](./docs/tutorials).
 
-### Run the class methods:
-
-Before starting, convert the data using `pygid` and either save it as a NeXus file or pass a `pygid.Conversion` instance after running the `det2q_gid()` conversion.
-
+### Quick Start
 ```python
 from mlgidbase import mlgidBASE
-import pygid
-```
-Option 1: Initialize from file
 
-```python
-filename = r'example\eiger4m_result.h5'
+# Initialize analysis from a NeXus file
+filename = r'./example/BA2PbI4.h5'
 analysis = mlgidBASE(filename=filename)
-```
-Option 2: Initialize from pygid.Conversion
 
-```python
-conversion = pygid.Conversion(
-    matrix=matrix,
-    path=filename,
-    dataset=dataset,
-    frame_num=frame_num
-)
+# Run peak detection
+analysis.run_detection()
 
-analysis = mlgidBASE(pygid_conversion=conversion)
-```
-### Run analysis methods
+# Run peak fitting
+analysis.run_fitting()
 
-```python
-# peak detection
-analysis.run_detection(
-  entry='entry_0000',           # if read from file
-  frame_num=0,                  # if read from file
-)
-
-# peak fitting
-analysis.run_fitting(
-  entry='entry_0000',           # if read from file
-  frame_num=0,                  # if read from file
-  clustering_distance_peaks=10,
-  clustering_distance_rings=10,
-  clustering_extend=2,
-  theta_fixed=False,
-)
-
-# peak matching
+# Run peak matching with preprocessed CIFs
 analysis.run_matching(
-  entry='entry_0000',           # if read from file
-  frame_num=0,                  # if read from file
-  cif_prepr='prepr_cifs.pickle',
-  probability_threshold=0.5,
-  intensity_threshold=0,
-  peaks_type='segments',
-  device='cpu'
+    cif_prepr='./example/prepr_cifs.pickle'
 )
 ```
 
-#### Description
+### Data Format
 
-#### 1. `mlgidBASE.run_detection()`
+The structure of the analysis results saved in the NeXus file is documented in the output file format 
+[guide](./docs/output_file_format.md).
 
-Runs peak detection on the specified entry or frame.
-
-**Parameters:**
-
-- `entry` — Data entry to process. Defaults to `None` (all entries).
-- `frame_num` — Frame number for detection. Defaults to `None` (all frames).
-- `config_file` — Path to detection configuration file. Defaults to `None` (default parameters).
-
----
-
-#### 2. `mlgidBASE.run_fitting()`
-
-Performs fitting of detected peaks with clustering.
-
-**Parameters:**
-
-- `entry` — Data entry to fit. Defaults to `None`.
-- `frame_num` — Frame number to fit. Defaults to `None`.
-- `crit_angle` (`float`) — Critical angle used in fitting. Defaults to `0`.
-- `clustering_distance_peaks` (`float`) — Distance threshold for clustering peaks. Defaults to `10`.
-- `clustering_distance_rings` (`float`) — Distance threshold for clustering rings. Defaults to `10`.
-- `clustering_extend` (`float`) — Cluster extension factor. Defaults to `2`.
-- `theta_fixed` (`bool`) - Whether to fix Gaussian tilt angle to 0° (azimuthal direction) during fitting.
-- `use_pool` (`bool`) — Enable multiprocessing. Defaults to `False`.
-- `debug` (`bool`) — Enable debug output. Defaults to `False`.
-
----
-
-#### 3. `mlgidBASE.run_matching()`
-
-Matches fitted peaks to CIF patterns.
-
-**Parameters:**
-
-- `entry`  — Data entry for matching. Defaults to `None` - all entries.
-- `frame_num`  — Frame number for matching. Defaults to `None` - all frames.
-- `cif_prepr` — Preprocessed CIFs object / path to PICKLE file to load. (Required)
-- `probability_threshold` (`float`) — Matching threshold for peaks. Defaults to `0.5`.
-- `intensity_threshold` - Intensity threshold for fitted peaks to be used in matching. 
-- `peaks_type` (`str`) — Type of peaks used for matching (`'segments'` or `'rings'`). Defaults to `'peaks'`.
-- `device` (`str`) — Computation device (`'cpu'` or `'cuda'`). Defaults to `'cpu'`.
-
-
----
-### Plot result
-#### `mlgidBASE.plot_analysis_results()`
-
-The result of conversion and analysis can be visualized using `plot_analysis_results` function. 
-Users can control the color, size and styles of plotted peaks/rings. 
-
-```python
-detected_params={'line_width': 0.5,
-               'line_style': "--",
-               'line_color': "black",
-               'plot_id': True,
-               'text_color': 'white',
-               'text_size': 6,
-               'plot': False},
-fitted_params={'plot_segments': True,
-             'marker': 'o',
-             'marker_size': 50,
-             'marker_facecolor': "none",
-             'marker_edgecolor': "bone",
-             'plot_rings': True,
-             'line_width': 1,
-             'line_style': "--",
-             'line_color': "bone",
-             'plot_id': True,
-             'text_color': 'green',
-             'text_size': 8,
-             'plot': False},
-matched_params={
-  'solution': None,
-  'plot_segments': True,
-  'marker': ['o', 'o', 'o'],
-  'marker_size': [50, 50, 50],
-  'marker_facecolor': ["none", "none", "none"],
-  'marker_edgecolor': ['blue', 'green'],
-  'plot_rings': True,
-  'line_width': [1, 1, 1],
-  'line_style': ["--", "--", "--"],
-  'line_color': ['blue', 'green'],
-  'plot_id': True,
-  'text_color': ['green', 'black'],
-  'text_size': 8,
-  'legend': True,
-  'plot': True,},                             
-analysis.plot_analysis_results(
-          detected_params = detected_params,
-          fitted_params = fitted_params,
-          matched_params = matched_params,
-          frame_num = None, entry = None, # if read from file 
-          return_result=False, plot_result=True,
-          clims=(50, 1e4), 
-          xlim=(None, None), ylim=(None, None),
-          save_fig=True, path_to_save_fig="img.png")
-```
-Examples:
-- rings
-<p align="center">
-  <img src="./example/img_entry_0001_fr_0000_sol_0000.png" width="400" alt="pygidFIT">
-</p>
-
-- peaks
-
-<p align="center">
-  <img src="./example/img_entry_0001_fr_0000_sol_0001.png" width="400" alt="pygidFIT">
-</p>
-
-### Save result
-
-#### `mlgidBASE.save_result()`
-
-If the `mlgidBASE` instance was created from a file, results are saved automatically at each step (for every entry and frame).
-
-If the analysis is performed from a `pygid.Conversion` instance, `save_result()` must be called manually after completing the analysis.
-
-
-```python
-analysis.save_result(
-    path_to_save='result.h5',
-    save_polar=True
-)
-```
-
-**Parameters:**
-
-- `path_to_save` (`str`, optional) — Full path including the file name where the data will be saved. The file format must be `.h5`. Default is `'result.h5'`.
-
-- `overwrite_file` (`bool`, optional) — Whether to overwrite an existing HDF5 file if it already exists. Default is `True`.
-
-- `h5_group` (`str`, optional) — Name of the group inside the HDF5 file where the data will be stored. Default is `'entry_0000'`.
-
-- `overwrite_group` (`bool`, optional) — Whether to overwrite an existing group within the HDF5 file. Default is `False`.
-
-- `smpl_metadata` (`pygid.SampleMetadata`, optional) — Instance containing sample-related metadata to be stored in the file. Default is `None`.
-
-- `exp_metadata` (`pygid.ExpMetadata`, optional) — Instance containing experimental metadata to be stored in the file. Default is `None`.
-
-- `save_polar` (`bool`, optional) - Whether save the polar image used in analysis.
-
-The method stores processed images, detected peaks, fitted results, matched data, unit cell parameters, and associated metadata in a structured HDF5 format.
-
----
-
-The example of usage can be found in the `example` folder. 
-
-
+It describes how entries, frames, and peak information are stored for further inspection or processing.

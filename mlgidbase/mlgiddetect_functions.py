@@ -165,6 +165,7 @@ def _run_detection_single_frame(analysis, entry, frame_num):
     img_container_detect = run_mlgiddetect(conversion.img_gid_q[0], conversion.matrix[0].q_xy, conversion.matrix[0].q_z,
                                            analysis.imp_detect, analysis.config_detect)
     img_container_detect.metadata = _set_detection_metadata(analysis)
+    # analysis.img_container_detect = img_container_detect
     save_detect(analysis.filename, entry, frame_num, img_container_detect)
     analysis.logger.info(f"Saved detected peaks to file: {analysis.filename}, entry: {entry}, frame: {frame_num}")
 

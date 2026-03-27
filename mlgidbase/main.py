@@ -7,7 +7,7 @@ from .mlgiddetect_functions import _run_detection
 from .pygidfit_functions import _run_fitting
 from .mlgidmatch_functions import _run_matching
 from .visualization import get_plot_params, _plot_analysis_results
-from .peak_operations import _delete_peak
+from .peak_operations import _delete_peak, _add_peak, _draw_box
 from .nexus_operations import _get_detected_peaks, _get_fitted_peaks, _get_matched_peaks
 from mlgidmatch.preprocess.cif_preprocess import CifPattern
 
@@ -355,7 +355,7 @@ class mlgidBASE:
                                                'plot_id': True,
                                                'text_color': 'white',
                                                'text_size': 8,
-                                               'plot': True},
+                                               'plot': False},
                               fitted_params={'plot_segments': True,
                                              'marker': 'o',
                                              'marker_size': 50,
@@ -365,10 +365,10 @@ class mlgidBASE:
                                              'line_width': 1,
                                              'line_style': "--",
                                              'line_color': "bone",
-                                             'plot_id': True,
+                                             'plot_id': False,
                                              'text_color': 'white',
                                              'text_size': 8,
-                                             'plot': True},
+                                             'plot': False},
                               matched_params={
                                   'solution': None,
                                   'plot_segments': True,
@@ -380,11 +380,11 @@ class mlgidBASE:
                                   'line_width': [1, 1, 1],
                                   'line_style': ["--", "--", "--"],
                                   'line_color': ["bone", 'blue', 'green'],
-                                  'plot_id': True,
+                                  'plot_id': False,
                                   'text_color': 'white',
                                   'text_size': 8,
                                   'legend': True,
-                                  'plot': True,},
+                                  'plot': False,},
                               frame_num=None, entry=None,
                               return_result=False, plot_result=True,
                               clims=None, xlim=(None, None), ylim=(None, None),
@@ -475,3 +475,17 @@ class mlgidBASE:
 
     def get_matched_peaks(self, entry=None, frame_num=None):
         return _get_matched_peaks(self.nexus, entry=entry, frame_num=frame_num)
+
+    def add_peak(self, entry=None, frame_num=None,
+                 angle=None, angle_width = None,
+                 radius = None, radius_width = None,
+                 q_xy = None, q_z = None,
+                 dq_xy = None, dq_z = None,):
+        _add_peak(self, entry=entry, frame_num=frame_num,
+                  angle=angle, angle_width=angle_width,
+                  radius=radius, radius_width=radius_width,
+                  q_xy=q_xy, q_z=q_z,
+                  dq_xy=dq_xy, dq_z=dq_z,
+                  )
+    def draw_box(self, entry=None, frame_num=None):
+        _draw_box(self, entry=entry, frame_num=frame_num)

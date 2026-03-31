@@ -29,18 +29,18 @@ def _run_detection(analysis, entry=None, frame_num=None, config_detect=None, mod
     config_detect : str or Config, optional
         Detection configuration or path to configuration file.
     model_type : str, optional
-        Model type to use (e.g., 'faster_rcnn', 'detr').
+        Model type to use (e.g., 'faster_rcnn', 'dino').
     """
-    if config_detect is not None:
+    if config_detect is not None or model_type is not None:
         if analysis.config_detect is not None:
-            analysis.logger.info(f"config_detect is already set. The previous config is to be used")
+            analysis.logger.info(f"Configuration is already set. The previous detect_config and model_type are to be used")
         else:
             analysis.config_detect = config_detect
-    analysis.config_detect = load_config(config_detect)
-    if model_type is not None:
-        if analysis.config_detect.MODEL_TYPE != model_type:
-            analysis.config_detect.MODEL_TYPE = model_type
-            analysis.imp_detect = None
+    analysis.config_detect = load_config(analysis.config_detect, model_type)
+    # if model_type is not None:
+    #     if analysis.config_detect.MODEL_TYPE != model_type:
+    #         analysis.config_detect.MODEL_TYPE = model_type
+    #         analysis.imp_detect = None
     if analysis.imp_detect is None:
         load_inference(analysis)
 
@@ -187,10 +187,17 @@ def _set_detection_metadata(analysis):
                 'version': importlib.metadata.version("mlgiddetect"),
                 'date': datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'),
                 }
-    metadata.update(analysis.config_detect.__dict__)
+    key_list = ['MODEL_TYPE', 'POSTPROCESSING_NMSIOU', 'POSTPROCESSING_SCORE',
+                'PREPROCESSING_FLIPHORIZONTAL', 'PREPROCESSING_LINEAR_CONTRAST',
+                'PREPROCESSING_LINEAR_PERC_977', 'PREPROCESSING_NO_CONTRASTCORRECTION',
+                ]
+    for key in key_list:
+        if hasattr(analysis.config_detect, key):
+            metadata[key] = getattr(analysis.config_detect, key)
+    # metadata.update(analysis.config_detect.__dict__)
     return metadata
 
-def load_config(config):
+def load_config(config, model_type):
     """
     Load and validate detection configuration.
 
@@ -204,22 +211,32 @@ def load_config(config):
     Config
         Initialized and validated configuration object.
     """
-    if isinstance(config, Config):
-        config.PREPROCESSING_LINEAR_CONTRAST = True
-        return config
-    elif isinstance(config, str):
+    # if isinstance(config, Config):
+        # config.PREPROCESSING_LINEAR_CONTRAST = True
+        # if model_type is not None:
+        #     config.MODEL_TYPE == model_type
+    if isinstance(config, str):
         config = Config(config)
         config.PREPROCESSING_LINEAR_CONTRAST = True
-        return config
+        if model_type is not None:
+            config.MODEL_TYPE == model_type
     elif config is None:
         config = Config()
-        return check_valid_config(config)
+        config = set_valid_config(config, model_type)
+        # print("config.MODEL_TYPE", config.MODEL_TYPE, "model_type", model_type)
     else:
-        raise TypeError("Invalid config_detect. It should be a string, None or a Config object.")
+        config.PREPROCESSING_LINEAR_CONTRAST = True
+        # raise TypeError("Invalid config_detect. It should be a string, None or a Config object.")
+    return set_postprocessing_config(config)
 
 
+def set_postprocessing_config(config):
+    if config.MODEL_TYPE == 'dino':
+        config.POSTPROCESSING_SCORE = 0.4
+        config.POSTPROCESSING_NMSIOU = 0.4
+    return config
 
-def check_valid_config(config):
+def set_valid_config(config, model_type):
     """
     Apply default preprocessing settings to configuration.
 
@@ -241,7 +258,10 @@ def check_valid_config(config):
     config.PREPROCESSING_POLAR_SHAPE = [512, 1024]
     config.PREPROCESSING_POLAR_CONVERSION = True
     config.PREPROCESSING_LINEAR_PERC_977 = False
-    config.MODEL_TYPE == 'faster_rcnn'
+    if model_type is not None:
+        config.MODEL_TYPE = model_type
+    else:
+        config.MODEL_TYPE == 'dino'
     return config
 
 def run_mlgiddetect(img, q_xy_axes,q_z_axes, imp, config_detect):

@@ -189,7 +189,7 @@ class mlgidBASE:
         config_detect : Config or str, optional
             Detection configuration object or path to configuration file.
         model_type : str, optional
-            Type of detection model to use (e.g., 'faster_rcnn', 'detr').
+            Type of detection model to use (e.g., 'faster_rcnn', 'dino').
         """
         _run_detection(self, entry, frame_num, config_detect, model_type)
 

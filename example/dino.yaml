@@ -1,0 +1,31 @@
+GENERAL:
+  DEBUG: True
+
+MODEL:
+  TYPE: 'dino' 
+  REDOWNLOAD: False #redownload the model for each run
+  FORCE_CPU: False #force the use of the CPU
+#  ONNX_PATH: '/home/mymodel.onnx'
+
+PREPROCESSING:
+  CUDA: False #use CUDA for preprocessing if available
+  FLIPHORIZONTAL: False #flip the image horizontally for preprocessing
+  QUAZIPOLAR: False #use quazipolar transformation for preprocessing 
+  LINEAR_CONTRAST: True #use linear contrast correction for preprocessing
+  LINEAR_PERC_977: False #use the 97.7 percentile for linear contrast correction instead of the 99 percentile
+  NO_CONTRASTCORRECTION: False #do not perform any contrast correction for preprocessing
+  POLAR_SHAPE: [512,1024] 
+  POLAR_CONVERSION: True #use to perform polar conversion 
+
+POSTPROCESSING:
+  SCORE: 0.4 
+  NMSIOU: 0.4 #non maximum suppression iou threshold
+
+INPUT:
+  DATASET: '/home/testuser/mlgidDETECT/inputs/w4_mapbbr32.tif'
+  LABELED: False #option to use labeled data for evaluation
+
+OUTPUT:
+  IMAGEPREFIX: 'w4_mapbbr32'
+  FOLDER: './outputs'
+  H5PATH: './outputs'

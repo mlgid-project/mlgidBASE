@@ -5,6 +5,7 @@
 
 The package builds on the following components:
 
+- [pygid](https://github.com/mlgid-project/pygid) — for detector image conversion
 - [mlgidDETECT](https://github.com/mlgid-project/mlgidDETECT) — for peak detection  
 - [pygidFIT](https://github.com/mlgid-project/pygidFIT) — for two-dimensional peak fitting  
 - [mlgidMATCH](https://github.com/mlgid-project/mlgidMATCH_private) — for matching experimental peaks to known structures  

@@ -1,14 +1,13 @@
 import os
+os.environ["MPLCONFIGDIR"] = "/tmp/matplotlib"
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+os.environ["ORT_LOG_VERBOSITY_LEVEL"] = "3"
+
 import sys
 import logging
 import matplotlib
-
 matplotlib.use("Agg")
-os.environ["MPLCONFIGDIR"] = "/tmp/matplotlib"
 logging.getLogger("matplotlib").setLevel(logging.ERROR)
-os.environ["CUDA_VISIBLE_DEVICES"] = ""  # hides GPU
-os.environ["ORT_LOG_VERBOSITY_LEVEL"] = "3"  # only errors
-os.environ["ORT_LOG_LEVEL"] = "3"
 
 sys.path.insert(0, os.path.abspath('..'))
 

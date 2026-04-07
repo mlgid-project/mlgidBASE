@@ -4,7 +4,4 @@ nbsphinx
 myst-nb
 ipykernel
 nbconvert
-pygid>=0.2.6
-mlgiddetect>=0.2.1
-pygidfit>=0.1.2
-mlgidmatch>=0.1.1
+mlgidbase>=0.0.1

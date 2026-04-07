@@ -1,0 +1,10 @@
+sphinx>=7.0
+sphinx-rtd-theme
+nbsphinx
+myst-nb
+ipykernel
+nbconvert
+pygid>=0.2.6
+mlgiddetect>=0.2.1
+pygidfit>=0.1.2
+mlgidmatch>=0.1.1

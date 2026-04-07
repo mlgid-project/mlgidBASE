@@ -59,8 +59,6 @@ pip install -e .
 
 ---
 
----
-
 ## How to Use
 
 For full details, see the dedicated [tutorials](./docs/tutorials).
@@ -88,6 +86,6 @@ analysis.run_matching(
 ### Data Format
 
 The structure of the analysis results saved in the NeXus file is documented in the output file format 
-[guide](./docs/output_file_format.md).
+[guide](docs/tutorials/output_file_format.md).
 
 It describes how entries, frames, and peak information are stored for further inspection or processing.

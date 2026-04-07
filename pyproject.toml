@@ -15,7 +15,7 @@ dependencies = [
     "pygid==0.2.7",
     "mlgiddetect==0.2.1",
     "pygidfit==0.1.2",
-    "mlgidmatch==0.2.0",
+    "mlgidmatch==0.1.2",
 
 ]
 

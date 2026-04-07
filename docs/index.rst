@@ -1,8 +1,8 @@
 =====================
-pygid Documentation
+mlgidBASE Documentation
 =====================
 
-Welcome to the ``pygid`` documentation!
+Welcome to the ``mlgidBASE`` documentation!
 
 ``mlgidBASE`` is a Python package for machine learning–driven analysis of grazing-incidence wide-angle X-ray scattering (GIWAXS) data. It provides a full workflow from peak detection to matching with known crystal structures.
 

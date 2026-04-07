@@ -93,7 +93,9 @@ The group contains the following sub-entries:
 ## Data Access
 
 The data can be accessed using `silx view`, the `h5py` package, or `pygid.NexusFile`  
-(see [pygid Tutorial 11](https://pygid.readthedocs.io/en/latest/tutorials/tutorial_11_saved_data.html)).
+(see [`pygid` Tutorial 11](https://pygid.readthedocs.io/en/latest/tutorials/tutorial_11_saved_data.html),
+[`mlgidBASE Tutorial 8`](https://mlgidbase.readthedocs.io/en/latest/tutorials/tutorial_08_get_data.html)).
+
 
 ### Example: Reading Fitted Data
 

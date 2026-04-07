@@ -1,5 +1,11 @@
 import os
 import sys
+import logging
+import matplotlib
+
+matplotlib.use("Agg")
+logging.getLogger("matplotlib").setLevel(logging.ERROR)
+
 sys.path.insert(0, os.path.abspath('..'))
 
 project = 'mlgidBASE'

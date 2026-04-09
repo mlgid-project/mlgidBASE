@@ -40,7 +40,7 @@ The package builds on the following components:
 ### Install using pip
 
 ```bash
-pip install pygid
+pip install mlgidbase
 ```
 
 ### Install from source
@@ -56,9 +56,6 @@ Then navigate to the project directory and install it in editable mode:
 cd mlgidBASE
 pip install -e .
 ```
-
-#### Required Python version: 3.12
-
 ---
 
 ## How to Use

@@ -166,6 +166,9 @@ def _run_detection_single_frame(analysis, entry, frame_num):
                                            analysis.imp_detect, analysis.config_detect)
     img_container_detect.metadata = _set_detection_metadata(analysis)
     # analysis.img_container_detect = img_container_detect
+    if img_container_detect.radius is None:
+        analysis.logger.warning("No peaks detected for file: {}, entry: {}, frame: {}".format(analysis.filename, entry, frame_num))
+        return
     save_detect(analysis.filename, entry, frame_num, img_container_detect)
     analysis.logger.info(f"Saved detected peaks to file: {analysis.filename}, entry: {entry}, frame: {frame_num}")
 

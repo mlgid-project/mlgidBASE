@@ -83,6 +83,9 @@ def _run_matching_from_memory(analysis, threshold, peaks_type, int_min):
     if analysis.img_container_fit_list is None:
         raise ValueError("img_container_fit_list is not defined. Call run_fitting before run_fitting")
     for frame_num, img_container_fit in enumerate(analysis.img_container_fit_list):
+        if img_container_fit is None:
+            analysis.container_match_list.append(None)
+            continue
         amplitude_full = img_container_fit.amplitude
         int_mask = amplitude_full > int_min
 
@@ -150,6 +153,8 @@ def _run_matching_from_file(analysis, entry, frame_num, threshold, peaks_type, i
     """
     if entry is None:
         for entry in analysis.entry_dict:
+            if analysis.entry_dict[entry]['img_type'] != 'img_gid_q':
+                continue
             _run_matching_single_entry(analysis, entry, frame_num, threshold, peaks_type, int_min)
         return
     elif isinstance(entry, list):

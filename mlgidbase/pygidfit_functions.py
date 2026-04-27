@@ -92,6 +92,9 @@ def _run_fitting_from_memory(analysis, clustering_distance_peaks,
     if analysis.img_container_detect_list is None:
         raise ValueError("img_container_detect_list is not defined. Call run_detection before run_fitting")
     for i, img_container_detect in enumerate(analysis.img_container_detect_list):
+        if img_container_detect is None:
+            analysis.img_container_fit_list.append(None)
+            continue
         img_container_detect.converted_polar_image = analysis.img_pol[i]
         img_container_fit, peaks_pool = _run_pygidfit_from_memory(img_container_detect=img_container_detect,
                                                                  wavelength=wavelength, q_xy_max=np.nanmax(q_xy),

@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.ticker as ticker
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from matplotlib.colors import LogNorm
+from matplotlib.colors import LogNorm, is_color_like
 from matplotlib.ticker import LogLocator
 import logging
 from pathlib import Path
@@ -478,18 +478,17 @@ def _plot_analysis_results_single_frame(analysis,
         Same as `_plot_analysis_results`.
     """
     conversion = read_conversion_from_nexus(analysis.nexus, entry, frame_num)
-    detected_peaks = read_detected_peaks(analysis.nexus, entry, frame_num)
-    fitted_peaks, _, _ = read_fitted_peaks(analysis.nexus, entry, frame_num)
     q_xy, q_z = conversion.matrix[0].q_xy, conversion.matrix[0].q_z
-
     name, fmt = os.path.splitext(path_to_save_fig)
 
     if detected_params['plot']:
+        detected_peaks = read_detected_peaks(analysis.nexus, entry, frame_num)
         detected_params['radius'] = detected_peaks['radius']
         detected_params['radius_width'] = detected_peaks['radius_width']
         detected_params['angle'] = detected_peaks['angle']
         detected_params['angle_width'] = detected_peaks['angle_width']
     if fitted_params['plot'] or matched_params['plot']:
+        fitted_peaks, _, _ = read_fitted_peaks(analysis.nexus, entry, frame_num)
         fitted_params['amplitude'] = fitted_peaks['amplitude']
         fitted_params['q_z'] = fitted_peaks['q_z']
         fitted_params['q_xy'] = fitted_peaks['q_xy']
@@ -602,7 +601,7 @@ def _plot_detected(ax, detected_params):
     for i, (r, dr, a, da) in enumerate(zip(rad, radw, ang, angw)):
         for sign in (-1, +1):
             ax.add_patch(Arc((0, 0), 2 * (r + sign * dr), 2 * (r + sign * dr),
-                             theta1=a - da, theta2=a + da,
+                             theta1=a - da/2, theta2=a + da/2,
                              lw=detected_params.get('line_width', 0.5),
                              ls=detected_params.get('line_style', "--"),
                              color=detected_params.get('line_color', "black")))
@@ -632,11 +631,57 @@ def _plot_fitted(ax, fitted_params):
     if fitted_params.get('plot_rings', False):
         _plot_fitted_rings(ax, fitted_params, rings, amp, rad)
 
+# def _plot_fitted_peaks(ax, fitted_params, mask, amp, qxy, qz):
+#     if mask.any():
+#         norm = LogNorm(vmin=max(amp[mask].min(), 1e-3), vmax=amp[mask].max())
+#         cmap = plt.get_cmap(fitted_params.get('marker_edgecolor', 'bone'))
+#         colors = cmap(norm(amp[mask]))
+#
+#         ax.scatter(
+#             qxy[mask],
+#             qz[mask],
+#             facecolors=fitted_params.get('marker_facecolor', 'none'),
+#             edgecolors=colors,
+#             marker=fitted_params.get('marker', 'o'),
+#             s=fitted_params.get('marker_size', 50),
+#         )
+#         # --- labels inside scatter ---
+#         if fitted_params.get('plot_id', False):
+#             idx_non_ring = np.where(mask)[0]
+#             for i, x, y in zip(idx_non_ring, qxy[mask], qz[mask]):
+#                 ax.text(x, y, str(i),
+#                         ha='center', va='center',
+#                         fontsize=fitted_params.get('text_size', 8),
+#                         color=fitted_params.get('text_color', "black"),
+#                         clip_on=True,)
+
+
+# import matplotlib.pyplot as plt
+
+
+
 def _plot_fitted_peaks(ax, fitted_params, mask, amp, qxy, qz):
     if mask.any():
-        norm = LogNorm(vmin=max(amp[mask].min(), 1e-3), vmax=amp[mask].max())
-        cmap = plt.get_cmap(fitted_params.get('marker_edgecolor', 'bone'))
-        colors = cmap(norm(amp[mask]))
+        color_spec = fitted_params.get('marker_edgecolor', 'bone')
+
+        # --- case 1: colormap ---
+        try:
+            cmap = plt.get_cmap(color_spec)
+            use_cmap = True
+        except ValueError:
+            use_cmap = False
+
+        if use_cmap:
+            norm = LogNorm(
+                vmin=max(amp[mask].min(), 1e-3),
+                vmax=amp[mask].max()
+            )
+            colors = cmap(norm(amp[mask]))
+        else:
+            # --- case 2: single color ---
+            if not is_color_like(color_spec):
+                raise ValueError(f"Invalid color or colormap: {color_spec}")
+            colors = color_spec
 
         ax.scatter(
             qxy[mask],
@@ -646,15 +691,18 @@ def _plot_fitted_peaks(ax, fitted_params, mask, amp, qxy, qz):
             marker=fitted_params.get('marker', 'o'),
             s=fitted_params.get('marker_size', 50),
         )
+
         # --- labels inside scatter ---
         if fitted_params.get('plot_id', False):
             idx_non_ring = np.where(mask)[0]
             for i, x, y in zip(idx_non_ring, qxy[mask], qz[mask]):
-                ax.text(x, y, str(i),
-                        ha='center', va='center',
-                        fontsize=fitted_params.get('text_size', 8),
-                        color=fitted_params.get('text_color', "black"),
-                        clip_on=True,)
+                ax.text(
+                    x, y, str(i),
+                    ha='center', va='center',
+                    fontsize=fitted_params.get('text_size', 8),
+                    color=fitted_params.get('text_color', "black"),
+                    clip_on=True,
+                )
 
 def _place_ring_label(ax, r, ang_deg, idx, _params, tx = None):
     if tx is None:
@@ -706,20 +754,55 @@ def _place_ring_label(ax, r, ang_deg, idx, _params, tx = None):
             clip_on=True,)
 
 
+# def _plot_fitted_rings(ax, fitted_params, rings, amp, rad):
+#     plt_color = plt.get_cmap(fitted_params.get('line_color', 'bone'))
+#     max_amp = amp[rings].max() if rings.any() else 1
+#
+#     idx_ring = np.where(rings)[0]
+#     angles_deg = np.linspace(5, 90, len(idx_ring), endpoint=True)
+#
+#     for i, r, a, ang_deg in zip(idx_ring, rad[rings], amp[rings], angles_deg):
+#         color = plt_color(np.log10(max(a, 1e-3)) / np.log10(max_amp))
+#
+#         ax.add_patch(Arc((0, 0), 2 * r, 2 * r, theta1=0, theta2=90,
+#                          color=color,
+#                          lw=fitted_params.get('line_width', 1),
+#                          ls=fitted_params.get('line_style', '--')))
+#
+#         if fitted_params.get('plot_id', False):
+#             _place_ring_label(ax, r, ang_deg, i, fitted_params)
 def _plot_fitted_rings(ax, fitted_params, rings, amp, rad):
-    plt_color = plt.get_cmap(fitted_params.get('line_color', 'bone'))
+    color_spec = fitted_params.get('line_color', 'bone')
+
+    # --- strict colormap detection ---
+    if color_spec in plt.colormaps():
+        cmap = plt.get_cmap(color_spec)
+        use_cmap = True
+    else:
+        use_cmap = False
+
     max_amp = amp[rings].max() if rings.any() else 1
 
     idx_ring = np.where(rings)[0]
     angles_deg = np.linspace(5, 90, len(idx_ring), endpoint=True)
 
     for i, r, a, ang_deg in zip(idx_ring, rad[rings], amp[rings], angles_deg):
-        color = plt_color(np.log10(max(a, 1e-3)) / np.log10(max_amp))
 
-        ax.add_patch(Arc((0, 0), 2 * r, 2 * r, theta1=0, theta2=90,
-                         color=color,
-                         lw=fitted_params.get('line_width', 1),
-                         ls=fitted_params.get('line_style', '--')))
+        if use_cmap:
+            color = cmap(np.log10(max(a, 1e-3)) / np.log10(max_amp))
+        else:
+            color = color_spec
+
+        ax.add_patch(
+            Arc(
+                (0, 0),
+                2 * r, 2 * r,
+                theta1=0, theta2=90,
+                color=color,
+                lw=fitted_params.get('line_width', 1),
+                ls=fitted_params.get('line_style', '--')
+            )
+        )
 
         if fitted_params.get('plot_id', False):
             _place_ring_label(ax, r, ang_deg, i, fitted_params)

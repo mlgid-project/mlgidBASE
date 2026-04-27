@@ -10,6 +10,9 @@ import importlib.metadata
 import numpy as np
 from datetime import datetime
 
+import logging
+logger = logging.getLogger()
+
 
 def _run_detection(analysis, entry=None, frame_num=None, config_detect=None, model_type=None):
     """
@@ -85,6 +88,9 @@ def _run_detection_from_memory(analysis):
         img_pol = np.array(analysis.img_pol[i])
         img_container_detect = run_mlgiddetect_from_polar(img_pol,
                                                           analysis.imp_detect, analysis.config_detect)
+        if img_container_detect is None:
+            analysis.img_container_detect_list.append(None)
+            continue
         img_container_detect.ai = analysis.pygid_conversion.ai_list[i]
         img_container_detect.wavelength = analysis.pygid_conversion.matrix[0].params.wavelength
         img_container_detect.metadata = _set_detection_metadata(analysis)
@@ -106,6 +112,8 @@ def _run_detection_from_file(analysis, entry, frame_num):
     """
     if entry is None:
         for entry in analysis.entry_dict:
+            if analysis.entry_dict[entry]['img_type'] != 'img_gid_q':
+                continue
             _run_detection_single_entry(analysis, entry, frame_num)
         return
     elif isinstance(entry, list):
@@ -164,11 +172,12 @@ def _run_detection_single_frame(analysis, entry, frame_num):
     conversion = read_conversion_from_nexus(analysis.nexus, entry, frame_num)
     img_container_detect = run_mlgiddetect(conversion.img_gid_q[0], conversion.matrix[0].q_xy, conversion.matrix[0].q_z,
                                            analysis.imp_detect, analysis.config_detect)
-    img_container_detect.metadata = _set_detection_metadata(analysis)
-    # analysis.img_container_detect = img_container_detect
+    if img_container_detect is None:
+        return
     if img_container_detect.radius is None:
         analysis.logger.warning("No peaks detected for file: {}, entry: {}, frame: {}".format(analysis.filename, entry, frame_num))
         return
+    img_container_detect.metadata = _set_detection_metadata(analysis)
     save_detect(analysis.filename, entry, frame_num, img_container_detect)
     analysis.logger.info(f"Saved detected peaks to file: {analysis.filename}, entry: {entry}, frame: {frame_num}")
 
@@ -214,10 +223,6 @@ def load_config(config, model_type):
     Config
         Initialized and validated configuration object.
     """
-    # if isinstance(config, Config):
-        # config.PREPROCESSING_LINEAR_CONTRAST = True
-        # if model_type is not None:
-        #     config.MODEL_TYPE == model_type
     if isinstance(config, str):
         config = Config(config)
         config.PREPROCESSING_LINEAR_CONTRAST = True
@@ -226,10 +231,8 @@ def load_config(config, model_type):
     elif config is None:
         config = Config()
         config = set_valid_config(config, model_type)
-        # print("config.MODEL_TYPE", config.MODEL_TYPE, "model_type", model_type)
     else:
         config.PREPROCESSING_LINEAR_CONTRAST = True
-        # raise TypeError("Invalid config_detect. It should be a string, None or a Config object.")
     return set_postprocessing_config(config)
 
 
@@ -292,28 +295,32 @@ def run_mlgiddetect(img, q_xy_axes,q_z_axes, imp, config_detect):
     try:
         img_container_detect = ImageContainer()
     except:
-        raise ValueError("Detection failed. Couldn't create ImageContainer()")
-
+        logger.warning("Detection failed. Couldn't create ImageContainer()")
+        return
     try:
-        img_container_detect.from_pygid(config_detect, np.nan_to_num(img), q_xy_axes[-1], q_z_axes[-1], 0)
+        img_container_detect.from_pygid(config_detect, np.nan_to_num(img), q_z_axes[-1], q_xy_axes[-1], 0)
     except:
-        raise ValueError("Detection failed. Couldn't load data from NeXus")
+        logger.warning("Detection failed. Couldn't load data from NeXus")
+        return
     # polar conversion
     try:
         img_container_detect.converted_polar_image, img_container_detect.raw_polar_image, img_container_detect.converted_mask = standard_preprocessing(
         config_detect, img_container_detect.raw_reciprocal)
     except:
-        raise ValueError("Detection failed. Couldn't run image preprocessing")
+        logger.warning("Detection failed. Couldn't run image preprocessing")
+        return
     # detection
     try:
         raw_results = imp.infer(img_container_detect)
     except:
-        raise ValueError("Detection failed. Couldn't detect any peaks")
+        logger.warning("Detection failed. Couldn't detect any peaks")
+        return
     # postprocessing
     try:
         img_container_detect = standard_postprocessing(img_container_detect, raw_results)
     except:
-        raise ValueError("Detection failed. Couldn't run image postprocessing")
+        logger.warning("Detection failed. Couldn't run image postprocessing")
+        return
     img_container_detect.split_polar_images = None
     return img_container_detect
 

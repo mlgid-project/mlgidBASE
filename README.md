@@ -1,6 +1,6 @@
 # mlgidBASE
 [![Python version](https://img.shields.io/badge/python-3.9%7C3.10%7C3.11%7C3.12%7C3.13%7C3.14-blue.svg)](https://www.python.org/)
-[![Documentation](https://img.shields.io/badge/Documentation%20%26%20Tutorials-blue)](https://mlgidbase.readthedocs.io/en/latest/#)
+[![Documentation](https://img.shields.io/badge/Documentation%20%26%20Tutorials-red)](https://mlgidbase.readthedocs.io/en/latest/#)
 
 `mlgidBASE` is a Python package for machine learning–driven analysis of grazing-incidence wide-angle X-ray scattering (GIWAXS) data. It provides a full workflow from peak detection to matching with known crystal structures.
 

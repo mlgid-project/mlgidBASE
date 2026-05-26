@@ -497,7 +497,7 @@ def _plot_analysis_results_single_frame(analysis,
     if matched_params.get('plot', False):
         container_matched = read_matched_data(analysis.filename, entry, frame_num)
         if len(container_matched) == 0:
-            if matched_params['plot']:
+            if matched_params.get('plot', False):
                 analysis.logger.info(f"Found no matching solution for frame_num {frame_num}")
                 matched_params['plot'] = False
                 path_to_save_fig_modif = f"{name}_{entry}_fr_{frame_num:04d}{fmt}"
@@ -511,15 +511,28 @@ def _plot_analysis_results_single_frame(analysis,
                                        save_fig, path_to_save_fig_modif)
                 return
         matched_params['num'] = frame_num
+        path_to_save_fig_modif = None
         for sol_ind in range(len(container_matched)):
             field_name, sol = container_matched[sol_ind]
-            if field_name.startswith('matched_rings') and not matched_params['plot_rings']:
+            if field_name.startswith('matched_rings') and not matched_params.get('plot_rings', True):
                 continue
-            if field_name.startswith('matched_segments') and not matched_params['plot_segments']:
+            if field_name.startswith('matched_segments') and not matched_params.get('plot_segments', True):
                 continue
             path_to_save_fig_modif = f"{name}_{entry}_fr_{frame_num:04d}_sol_{sol_ind:04d}{fmt}"
             matched_params['solution'] = sol
             matched_params['field_name'] = field_name
+            _plot_single_frame(analysis,
+                              conversion.img_gid_q[0], q_xy, q_z,
+                                   detected_params,
+                                   fitted_params,
+                                   matched_params,
+                                   return_result, plot_result,
+                                   clims, xlim, ylim,
+                                   save_fig, path_to_save_fig_modif)
+        if path_to_save_fig_modif is None:
+            path_to_save_fig_modif = f"{name}_{entry}_fr_{frame_num:04d}{fmt}"
+            matched_params = matched_params.copy()
+            matched_params['plot'] = False
             _plot_single_frame(analysis,
                               conversion.img_gid_q[0], q_xy, q_z,
                                    detected_params,
@@ -628,7 +641,7 @@ def _plot_fitted(ax, fitted_params):
     if fitted_params.get('plot_segments', True):
         _plot_fitted_peaks(ax, fitted_params, mask, amp, qxy, qz)
 
-    if fitted_params.get('plot_rings', False):
+    if fitted_params.get('plot_rings', True):
         _plot_fitted_rings(ax, fitted_params, rings, amp, rad)
 
 # def _plot_fitted_peaks(ax, fitted_params, mask, amp, qxy, qz):
@@ -853,16 +866,17 @@ def _plot_matched(ax, matched_params, fitted_params):
         peak_idx = [i for i in peak_idx if amp[i] > intensity_threshold]
 
         # ---- segments ----
-        if matched_params.get('plot_segments', False) and len(peak_idx) > 0:
+        if matched_params.get('plot_segments', True) and len(peak_idx) > 0:
             label = f"{cif.decode().split('.')[0]} {int(h), int(k), int(l)} {np.round(float(probability), 3)}"
             _plot_matched_segments(ax, matched_params, label, peak_idx, amp, qxy, qz,
                                    marker_cycle, size_cycle, face_cycle, edge_cycle, tx_cycle)
 
         # ---- rings ----
-        if matched_params.get('plot_rings', False) and len(ring_idx) > 0:
+        if matched_params.get('plot_rings', True) and len(ring_idx) > 0:
             label = f"{cif.decode().split('.')[0]} {np.round(float(probability), 3)}"
             _plot_matched_rings(ax, matched_params, label, ring_idx, amp, rad, angles_deg,
                                 lw_cycle, ls_cycle, lc_cycle, tx_cycle)
+    plt.show()
     if legend_flag:
         ax.legend()
 

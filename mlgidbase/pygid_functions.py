@@ -138,9 +138,32 @@ def save_fit(filename, entry, frame_num, img_container_fit):
         pygid._save_img_container_fit(f, group_name, img_container_fit)
         return
 
+def delete_match(filename, entry, frame_num, type):
+    """
+    Delete previously matched peaks from a NeXus file.
+
+    Parameters
+    ----------
+    filename : str
+        Path to the NeXus file.
+    entry : str
+        Entry name.
+    frame_num : int
+        Frame index.
+    type : str
+        Peak type.
+    """
+    with File(filename, "r+") as f:
+        group_name = f"/{entry}/data/analysis/frame{str(frame_num).zfill(5)}"
+        grp = f[group_name]
+        keys_to_delete = [key for key in grp.keys() if key.startswith(f"matched_{type}")]
+        for key in keys_to_delete:
+            del grp[key]
+    return
+
 def save_match(filename, entry, frame_num, container_matched):
     """
-    Save matched structural solutions to a NeXus file.
+    Save matched peaks to a NeXus file.
 
     Parameters
     ----------

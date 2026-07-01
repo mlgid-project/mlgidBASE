@@ -1,6 +1,6 @@
 from mlgidmatch.matching import Match
 from mlgidmatch.preprocess.cif_preprocess import CifPattern
-from .pygid_functions import read_fitted_peaks, save_match
+from .pygid_functions import read_fitted_peaks, save_match, delete_match
 import pickle
 import numpy as np
 import h5py
@@ -230,6 +230,7 @@ def _run_matching_single_frame(analysis, entry, frame_num, threshold, peaks_type
     if unique_solutions == {}:
         analysis.logger.info(f"No solutions for ({analysis.filename}, entry: {entry}, frame: {frame_num}) was found. "
                          f"Try to decrease threshold")
+        delete_match(analysis.filename, entry, frame_num, peaks_type)
         return
     unique_solutions['peaks_type'] = peaks_type
     unique_solutions['metadata'] = _set_matching_metadata(

@@ -200,8 +200,9 @@ def _set_detection_metadata(analysis):
                 'date': datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'),
                 }
     key_list = ['MODEL_TYPE', 'POSTPROCESSING_NMSIOU', 'POSTPROCESSING_SCORE',
-                'PREPROCESSING_FLIPHORIZONTAL', 'PREPROCESSING_LINEAR_CONTRAST',
-                'PREPROCESSING_LINEAR_PERC_977', 'PREPROCESSING_NO_CONTRASTCORRECTION',
+                'PREPROCESSING_FLIPHORIZONTAL', 'PREPROCESSING_LOG',
+                'PREPROCESSING_HISTOGRAMEQUALIZATION', 'PREPROCESSING_PERFORMCLIPPING',
+                'PREPROCESSING_HIGHERCLIPPINGPERCENTILE', 'PREPROCESSING_LOWERCLIPPINGPERCENTILE'
                 ]
     for key in key_list:
         if hasattr(analysis.config_detect, key):

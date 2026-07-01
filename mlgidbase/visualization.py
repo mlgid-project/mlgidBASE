@@ -876,9 +876,10 @@ def _plot_matched(ax, matched_params, fitted_params):
             label = f"{cif.decode().split('.')[0]} {np.round(float(probability), 3)}"
             _plot_matched_rings(ax, matched_params, label, ring_idx, amp, rad, angles_deg,
                                 lw_cycle, ls_cycle, lc_cycle, tx_cycle)
-    plt.show()
+
     if legend_flag:
         ax.legend()
+    plt.show()
 
 
 def _plot_matched_segments(ax, matched_params, label, peak_idx, amp, qxy, qz,

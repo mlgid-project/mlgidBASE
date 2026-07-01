@@ -8,19 +8,28 @@ MODEL:
 #  ONNX_PATH: '/home/mymodel.onnx'
 
 PREPROCESSING:
-  CUDA: False
-  FLIPHORIZONTAL: False
-  QUAZIPOLAR: True
-  LINEAR_CONTRAST: True
-  LINEAR_PERC_977: False
-  NO_CONTRASTCORRECTION: False
-  POLAR_SHAPE: [512,1024]
-  POLAR_CONVERSION: True
+  CUDA: False                   #use CUDA for preprocessing if available
+  FLIPHORIZONTAL: False         #flip the image horizontally for preprocessing
+  QUAZIPOLAR: False             #use quazipolar transformation for preprocessing
+  LOG: True                     #use log contrast correction for preprocessing
+  HISTOGRAMEQUALIZATION: False  #use histogram equalization for preprocessing
+  PERFORMCLIPPING: True         #perform clipping of pixel values for preprocessing
+  HIGHERCLIPPINGPERCENTILE: 99.5 #upper clipping percentile for preprocessing
+  LOWERCLIPPINGPERCENTILE: 5.0  #lower clipping percentile for preprocessing
+  POLAR_SHAPE: [512,1024]       #model input size
+  POLAR_CONVERSION: True        #use to perform polar conversion
+
+
+POSTPROCESSING:
+  SCORE: 0.4                    #minimum score for peaks
+  NMSIOU: 0.4                   #non maximum suppression iou threshold
+  TTA: False                    #use test time augmentation for postprocessing
 
 INPUT:
-  IMGPATH: './inputs/w4_mapbbr32.tif'
-  #DATASET: '/home/testuser/38_labeled.h5'
-  LABELED: False
+  DATASET: '/home/testuser/mlgidDETECT/inputs/test.h5'  #pygid NeXus h5 file
+  #IMGPATH: './inputs/w4_mapbbr32.tif'  #image file in reciprocal coordinates
+  LABELED: False                #option to use labeled data for evaluation
 
 OUTPUT:
-  FOLDER: './outputs'
+  IMAGEPREFIX: 'w4_mapbbr32'    #image prefix for saving
+  FOLDER: './outputs'           #image output folder

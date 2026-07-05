@@ -7,7 +7,7 @@ from .mlgiddetect_functions import _run_detection
 from .pygidfit_functions import _run_fitting
 from .mlgidmatch_functions import _run_matching
 from .visualization import get_plot_params, _plot_analysis_results
-from .peak_operations import _delete_peak, _add_peak, _draw_box
+from .peak_operations import _delete_peak, _add_peak, _draw_box, _track_peaks
 from .nexus_operations import _get_detected_peaks, _get_fitted_peaks, _get_matched_peaks
 from mlgidmatch.preprocess.cif_preprocess import CifPattern
 
@@ -489,3 +489,81 @@ class mlgidBASE:
                   )
     def draw_box(self, entry=None, frame_num=None):
         _draw_box(self, entry=entry, frame_num=frame_num)
+
+    def track_peaks(self, entry=None, threshold=0.5, length=10, axis='radius',
+                    plot_params={
+                        'plot_result': True,
+                        'save_fig': False,
+                        'path_to_save_fig':'peak_tracking.png',
+                        'line_width': 0.5,
+                        'line_style': '--',
+                        'marker_size': 1,}):
+        """
+            Track fitted peaks across frames using IoU-based graph clustering.
+
+            The function extracts fitted peak parameters from the analysis object,
+            constructs bounding boxes in (angle, radius) space, and computes pairwise
+            Intersection over Union (IoU) to define temporal connectivity between peaks.
+            A graph is then built from the IoU matrix, and connected components are
+            interpreted as tracked peak trajectories.
+
+            Parameters
+            ----------
+            analysis : object
+                Analysis container providing access to fitted peak data via
+                `analysis.get_fitted_peaks()`.
+            entry : hashable
+                Key identifying the dataset entry containing peak fits.
+            threshold : float
+                IoU threshold used to define connectivity between peaks. Values below
+                this threshold are discarded.
+            length : int
+                Minimum number of connected nodes required for a component to be
+                considered a valid track.
+            axis : {'radius', 'angle', 'amplitude', 'q_z', 'q_xy'}
+                Physical quantity to be used for tracking output.
+            plot_params : dict
+                Dictionary controlling visualization options. Expected keys include
+                'plot_result' and 'save_fig'.
+
+            Returns
+            -------
+            axis : ndarray
+                Array of the selected tracked quantity corresponding to all peak instances.
+            amplitude : ndarray
+                Amplitude values for all tracked peaks.
+            G_comps : list of list of int
+                List of connected components representing peak trajectories, each
+                component containing indices of associated peak instances.
+
+            Raises
+            ------
+            ValueError
+                If `axis` is not one of the supported tracking variables: 'angle', 'radius',
+                'amplitude', 'q_z', 'q_xy'.
+
+            Notes
+            -----
+            - Peak connectivity is defined in (angle, radius) space via IoU of bounding boxes.
+            - Graph connectivity is computed using NetworkX connected components.
+            - Only components larger than `length` are retained.
+        """
+
+        if not self.from_nexus:
+            self.logger.info("Only file processing is currently supported.")
+            return
+        if entry is None:
+            for entry in self.entry_dict:
+                if self.entry_dict[entry]['img_type'] != 'img_gid_q':
+                    continue
+                return _track_peaks(self, entry, threshold, length, axis, plot_params)
+            return
+        elif isinstance(entry, list):
+            for e in entry:
+                if not e in self.entry_dict:
+                    raise ValueError("entry not found in the NeXus file")
+                return _track_peaks(self, e, threshold, length, axis, plot_params)
+        else:
+            if not entry in self.entry_dict:
+                raise ValueError("entry not found in the NeXus file")
+            return _track_peaks(self, entry, threshold, length, axis, plot_params)

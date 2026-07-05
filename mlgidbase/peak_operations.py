@@ -2,6 +2,10 @@ import numpy as np
 from .pygid_functions import read_detected_peaks, read_fitted_peaks, read_fitted_peaks_errors, read_matched_data
 from .widgets import _draw_polar_img
 import logging
+import networkx as nx
+from .visualization import _plot_tracked_peaks
+from scipy.ndimage import median_filter, gaussian_filter1d
+
 logger = logging.getLogger()
 def _add_peak(analysis, entry, frame_num,
                   angle, angle_width,
@@ -237,8 +241,175 @@ def _delete_matched_peaks(analysis, entry, frame_num, peak_id):
                                       data=sol)
 
 
-
 def _draw_box(analysis, entry, frame_num):
     if not hasattr(analysis,'img_container_detect'):
         raise AttributeError("Call run_datection for this specific frame before drawing boxes")
     _draw_polar_img(analysis.img_container_detect)
+
+
+def calculate_iou_matrix(boxes_a, boxes_b):
+    # Reshape for broadcasting
+    # boxes_a: (N, 4), boxes_b: (M, 4)
+    a = boxes_a[:, np.newaxis, :]
+    b = boxes_b[np.newaxis, :, :]
+
+    # Intersection coordinates
+    x_left = np.maximum(a[..., 0], b[..., 0])
+    y_top = np.maximum(a[..., 1], b[..., 1])
+    x_right = np.minimum(a[..., 2], b[..., 2])
+    y_bottom = np.minimum(a[..., 3], b[..., 3])
+
+    # Intersection and Union areas
+    inter_area = np.maximum(0, x_right - x_left) * np.maximum(0, y_bottom - y_top)
+    area_a = (a[..., 2] - a[..., 0]) * (a[..., 3] - a[..., 1])
+    area_b = (b[..., 2] - b[..., 0]) * (b[..., 3] - b[..., 1])
+
+    union_area = area_a + area_b - inter_area
+    return inter_area / (union_area + 1e-6)
+
+def _track_peaks(analysis, entry, threshold, length, axis, plot_params):
+    """
+        Track fitted peaks across frames using IoU-based graph clustering.
+
+        The function extracts fitted peak parameters from the analysis object,
+        constructs bounding boxes in (angle, radius) space, and computes pairwise
+        Intersection over Union (IoU) to define temporal connectivity between peaks.
+        A graph is then built from the IoU matrix, and connected components are
+        interpreted as tracked peak trajectories.
+
+        Parameters
+        ----------
+        analysis : object
+            Analysis container providing access to fitted peak data via
+            `analysis.get_fitted_peaks()`.
+        entry : hashable
+            Key identifying the dataset entry containing peak fits.
+        threshold : float
+            IoU threshold used to define connectivity between peaks. Values below
+            this threshold are discarded.
+        length : int
+            Minimum number of connected nodes required for a component to be
+            considered a valid track.
+        axis : {'radius', 'angle', 'amplitude', 'q_z', 'q_xy'}
+            Physical quantity to be used for tracking output.
+        plot_params : dict
+            Dictionary controlling visualization options. Expected keys include
+            'plot_result' and 'save_fig'.
+
+        Returns
+        -------
+        axis : ndarray
+            Array of the selected tracked quantity corresponding to all peak instances.
+        amplitude : ndarray
+            Amplitude values for all tracked peaks.
+        G_comps : list of list of int
+            List of connected components representing peak trajectories, each
+            component containing indices of associated peak instances.
+
+        Raises
+        ------
+        ValueError
+            If `axis` is not one of the supported tracking variables: 'angle', 'radius',
+            'amplitude', 'q_z', 'q_xy'.
+
+        Notes
+        -----
+        - Peak connectivity is defined in (angle, radius) space via IoU of bounding boxes.
+        - Graph connectivity is computed using NetworkX connected components.
+        - Only components larger than `length` are retained.
+        """
+
+    fitted_peaks_dict = analysis.get_fitted_peaks()[entry]
+
+    box_list = []
+    frame_num_list = []
+
+    fields = {
+        'peak_num': [],
+        'q_z': [],
+        'q_xy': [],
+        'radius': [],
+        'angle': [],
+        'amplitude': [],
+        'is_ring': [],
+    }
+
+    for frame, fitted_peaks in fitted_peaks_dict.items():
+        angle = fitted_peaks['angle']
+        angle_width = fitted_peaks['angle_width']
+        radius = fitted_peaks['radius']
+        radius_width = fitted_peaks['radius_width']
+
+        box_list.append(
+            np.column_stack((
+                angle - angle_width / 2,
+                radius - radius_width / 2,
+                angle + angle_width / 2,
+                radius + radius_width / 2,
+            ))
+        )
+
+        frame_num_list.append(np.full(len(fitted_peaks), int(frame)))
+
+        fields['peak_num'].append(fitted_peaks['id'])
+        fields['q_z'].append(fitted_peaks['q_z'])
+        fields['q_xy'].append(fitted_peaks['q_xy'])
+        fields['radius'].append(radius)
+        fields['angle'].append(fitted_peaks['angle'])
+        fields['amplitude'].append(fitted_peaks['amplitude'])
+        fields['is_ring'].append(fitted_peaks['is_ring'])
+
+    box_all = np.vstack(box_list)
+    frame_num_all = np.concatenate(frame_num_list)
+    peak_num_all = np.concatenate(fields['peak_num'])
+    q_z_all = np.concatenate(fields['q_z'])
+    q_xy_all = np.concatenate(fields['q_xy'])
+    radius_all = np.concatenate(fields['radius'])
+    amplitude_all = np.concatenate(fields['amplitude'])
+    is_rings_all = np.concatenate(fields['is_ring'])
+    angles_all = np.concatenate(fields['angle'])
+
+    IoU_all = calculate_iou_matrix(box_all, box_all)
+    IoU_all[IoU_all < threshold] = 0
+    IoU_all[np.isnan(IoU_all)] = 0
+    IoU_all[IoU_all >= threshold] = 1
+
+    G = nx.from_numpy_array(IoU_all)
+    G_comps = nx.connected_components(G)
+    G_comps_list = []
+    for G1 in G_comps:
+        if len(list(G1)) > length:
+            G_comps_list.append(list(G1))
+
+    tracking_arrays = {
+        "radius": (
+            radius_all,
+            r"Radius [$\mathrm{\AA}^{-1}$]"
+        ),
+        "angle": (
+            angles_all,
+            r"Azimuthal angle [$^\circ$]"
+        ),
+        "amplitude": (
+            amplitude_all,
+            "Amplitude [arb. units]"
+        ),
+        "q_z": (
+            q_z_all,
+            r"$q_z$ [$\mathrm{\AA}^{-1}$]"
+        ),
+        "q_xy": (
+            q_xy_all,
+            r"$q_{xy}$ [$\mathrm{\AA}^{-1}$]"
+        ),
+    }
+
+    axis_arr, label = tracking_arrays.get(axis, (None, None))
+
+    if axis_arr is None:
+        raise ValueError(f"Invalid axis '{axis}'. Valid options are: {list(tracking_arrays.keys())}")
+
+    if plot_params.get('plot_result', True) or plot_params.get('save_fig', False):
+        _plot_tracked_peaks(analysis.plot_params, q_xy_all, q_z_all, frame_num_all, G_comps_list, axis_arr, label,
+                            plot_params)
+    return axis_arr, amplitude_all, G_comps_list

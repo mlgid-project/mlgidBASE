@@ -850,7 +850,10 @@ def _plot_matched(ax, matched_params, fitted_params):
     lw_cycle = cycle(matched_params.get('line_width', [1]))
     ls_cycle = cycle(matched_params.get('line_style', ['--']))
     lc_cycle = cycle(matched_params.get('line_color', ['blue', 'green', 'red']))
-    tx_cycle = cycle(matched_params.get('text_color', ['green', 'black', 'blue']))
+    text_color = matched_params.get('text_color', ['green', 'black', 'blue'])
+    if isinstance(text_color, str):
+        text_color = [text_color]
+    tx_cycle = cycle(text_color)
 
     angles_deg = np.linspace(5, 90, len(amp[rings]), endpoint=True)
 
@@ -879,7 +882,7 @@ def _plot_matched(ax, matched_params, fitted_params):
 
     if legend_flag:
         ax.legend()
-    plt.show()
+    # plt.show()
 
 
 def _plot_matched_segments(ax, matched_params, label, peak_idx, amp, qxy, qz,
@@ -959,3 +962,83 @@ def _plot_matched_rings(ax, matched_params, label, ring_idx, amp, rad, angles_de
         label = None
         if matched_params.get('plot_id', False):
             _place_ring_label(ax, r, ang_deg, ind, matched_params, tx)
+
+def _plot_tracked_peaks(plot_defaults, q_xy_all, q_z_all, frame_num_all, G_comps_list, axis_arr, label,
+                            plot_params):
+    with plt.rc_context(rc=plot_defaults):
+
+        colors = plt.cm.tab20(np.linspace(0, 1, len(G_comps_list)))
+
+        # ------------------------------------------------------------
+        # Figure 1: qxy vs qz
+        # ------------------------------------------------------------
+        fig, ax = plt.subplots(constrained_layout=True)
+        ax.set_box_aspect(1)
+
+        for i, index in enumerate(G_comps_list):
+            ax.plot(
+                q_xy_all[index],
+                q_z_all[index],
+                plot_params.get('line_style', 'o-'),
+                ms=plot_params.get('marker_size', 1),
+                lw=plot_params.get('line_width', 0.5),
+                color=colors[i],
+            )
+
+        ax.grid(True, alpha=0.3)
+
+        ax.set_xlabel(r'$q_{xy}$ [$\mathrm{\AA}^{-1}$]')
+        ax.set_ylabel(r'$q_{z}$ [$\mathrm{\AA}^{-1}$]')
+        ax.set_aspect("equal")
+
+        _save_plot_fig(fig, plot_params.get('plot_result', True),
+                       plot_params.get('save_fig', False),
+                       plot_params.get('path_to_save_fig', 'peak_tracking.png'),
+                       suffix="_qxy_qz")
+
+        # ------------------------------------------------------------
+        # Figure 2: qxy evolution with frame number
+        # ------------------------------------------------------------
+        fig, ax = plt.subplots(constrained_layout=True)
+        ax.set_box_aspect(1)
+
+        for i, index in enumerate(G_comps_list):
+            order = np.argsort(frame_num_all[index])
+
+            ax.plot(
+                frame_num_all[index][order],
+                axis_arr[index][order],
+                plot_params.get('line_style', 'o-'),
+                ms=plot_params.get('marker_size', 1),
+                lw=plot_params.get('line_width', 0.5),
+                color=colors[i],
+            )
+
+        ax.set_xlabel("Frame #")
+        ax.set_ylabel(label)
+        ax.grid(True, alpha=0.3)
+
+        _save_plot_fig(fig, plot_params.get('plot_result', True),
+                       plot_params.get('save_fig', False),
+                       plot_params.get('path_to_save_fig', 'peak_tracking.png'),
+                       suffix="_evolution")
+
+
+def _save_plot_fig(fig, plot_result, save_fig, path_to_save_fig, suffix):
+    if save_fig:
+        if path_to_save_fig is None:
+            raise ValueError("path_to_save_fig is not defined.")
+
+        path = Path(path_to_save_fig)
+        path = path.with_name(f"{path.stem}_{suffix}{path.suffix}")
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        fig.savefig(path, pad_inches=0.5, bbox_inches="tight")
+        logging.info(f"Saved figure in {path.resolve()}")
+
+        if not plot_result:
+            plt.close(fig)
+
+    if plot_result:
+        plt.show()

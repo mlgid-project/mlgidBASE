@@ -528,13 +528,12 @@ class mlgidBASE:
 
             Returns
             -------
-            axis : ndarray
-                Array of the selected tracked quantity corresponding to all peak instances.
-            amplitude : ndarray
-                Amplitude values for all tracked peaks.
-            G_comps : list of list of int
-                List of connected components representing peak trajectories, each
-                component containing indices of associated peak instances.
+            axis : list[ndarray]
+                List of arrays of the selected tracked quantity corresponding to all peak instances.
+            amplitude : list[ndarray]
+                List of arrays with corresponding amplitudes values for all tracked peaks.
+            frame_num : list[ndarray]
+                List of arrays with frame numbers where peak are present.
 
             Raises
             ------

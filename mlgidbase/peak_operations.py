@@ -298,13 +298,12 @@ def _track_peaks(analysis, entry, threshold, length, axis, plot_params):
 
         Returns
         -------
-        axis : ndarray
-            Array of the selected tracked quantity corresponding to all peak instances.
-        amplitude : ndarray
-            Amplitude values for all tracked peaks.
-        G_comps : list of list of int
-            List of connected components representing peak trajectories, each
-            component containing indices of associated peak instances.
+        axis : list[ndarray]
+            List of arrays of the selected tracked quantity corresponding to all peak instances.
+        amplitude : list[ndarray]
+            List of arrays with corresponding amplitudes values for all tracked peaks.
+        frame_num : list[ndarray]
+            List of arrays with frame numbers where peak are present.
 
         Raises
         ------
@@ -390,10 +389,6 @@ def _track_peaks(analysis, entry, threshold, length, axis, plot_params):
             angles_all,
             r"Azimuthal angle [$^\circ$]"
         ),
-        "amplitude": (
-            amplitude_all,
-            "Amplitude [arb. units]"
-        ),
         "q_z": (
             q_z_all,
             r"$q_z$ [$\mathrm{\AA}^{-1}$]"
@@ -412,4 +407,14 @@ def _track_peaks(analysis, entry, threshold, length, axis, plot_params):
     if plot_params.get('plot_result', True) or plot_params.get('save_fig', False):
         _plot_tracked_peaks(analysis.plot_params, q_xy_all, q_z_all, frame_num_all, G_comps_list, axis_arr, label,
                             plot_params)
-    return axis_arr, amplitude_all, G_comps_list
+    axis_arr_list = []
+    frame_num_list = []
+    amplitude_list = []
+
+    for i, index in enumerate(G_comps_list):
+        order = np.argsort(frame_num_all[index])
+        axis_arr_list.append(axis_arr[index][order])
+        frame_num_list.append(frame_num_all[index][order])
+        amplitude_list.append(amplitude_all[index][order])
+
+    return axis_arr_list, amplitude_list, frame_num_list

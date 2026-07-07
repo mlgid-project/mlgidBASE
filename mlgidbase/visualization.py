@@ -908,7 +908,8 @@ def _plot_matched_segments(ax, matched_params, label, peak_idx, amp, qxy, qz,
         edgecolors=colors,
         marker=marker,
         s=marker_size,
-        label=label
+        label=label,
+        linewidths=matched_params.get('line_width', [1]),
     )
 
     if matched_params.get('plot_id', False):

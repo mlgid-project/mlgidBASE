@@ -16,7 +16,7 @@ dependencies = [
     "mlgiddetect==0.2.3",
     "pygidfit==0.1.3",
     "mlgidmatch==0.1.3",
-#    "onnxruntime"
+    "onnxruntime"
 ]
 
 [project.urls]

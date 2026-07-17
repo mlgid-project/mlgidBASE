@@ -336,6 +336,7 @@ def _track_peaks(analysis, entry, threshold, length, axis, plot_params):
     for frame, fitted_peaks in fitted_peaks_dict.items():
         angle = fitted_peaks['angle']
         angle_width = fitted_peaks['angle_width']
+        angle_width[np.isinf(angle_width)] = 45
         radius = fitted_peaks['radius']
         radius_width = fitted_peaks['radius_width']
 

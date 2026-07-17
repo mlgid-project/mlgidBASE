@@ -386,7 +386,7 @@ class mlgidBASE:
                                   'legend': True,
                                   'plot': False,},
                               frame_num=None, entry=None,
-                              return_result=False, plot_result=True,
+                              return_fig=False, plot_result=True,
                               clims=None, xlim=(None, None), ylim=(None, None),
                               save_fig=False, path_to_save_fig="img.png"):
         """
@@ -404,8 +404,8 @@ class mlgidBASE:
             Frame index to plot. Defaults to all frames.
         entry : str, optional
             Entry name in the NeXus file.
-        return_result : bool, default False
-            Whether to return the matplotlib figure object.
+        return_fig : bool, optional
+            If True, return the matplotlib figure and axes objects.
         plot_result : bool, default True
             Whether to display the plot interactively.
         clims : tuple, optional
@@ -418,15 +418,35 @@ class mlgidBASE:
             Whether to save the figure to a file.
         path_to_save_fig : str, default 'img.png'
             Path to save the figure if `save_fig=True`.
+
+        Returns
+        -------
+        tuple or list of tuples or None
+            The returned value depends on the plotting mode and the `return_fig`
+            option.
+
+            - If `return_fig=False`, returns `None`.
+            - If a single figure is generated and `return_fig=True`, returns a
+              tuple ``(fig, ax)``, where ``fig`` is the matplotlib Figure object
+              and ``ax`` is the corresponding Axes object.
+            - If multiple figures are generated and `return_fig=True`, returns a
+              list of tuples ``[(fig1, ax1), (fig2, ax2), ...]``.
+
+            Multiple figures can be produced when plotting multiple frames,
+            multiple NeXus entries, or multiple matched solutions.
         """
-        _plot_analysis_results(self,
+        res =  _plot_analysis_results(self,
                                detected_params=detected_params,
                                fitted_params=fitted_params,
                                matched_params=matched_params,
                                frame_num=frame_num, entry=entry,
-                               return_result=return_result, plot_result=plot_result,
+                               return_result=return_fig, plot_result=plot_result,
                                clims=clims, xlim=xlim, ylim=ylim,
                                save_fig=save_fig, path_to_save_fig=path_to_save_fig)
+        if return_fig:
+            if len(res)==1:
+                return res[0]
+            return res
 
     def check_valid_data(self, detected_params, fitted_params, matched_params):
         """

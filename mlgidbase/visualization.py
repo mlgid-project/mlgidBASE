@@ -130,7 +130,7 @@ def _plot_analysis_results(analysis,
         if not entry is None:
             analysis.logger.info(f"entry is ignored when analysis is from memory")
         entry = 'entry_0000'
-        _plot_analysis_results_from_memory(
+        return _plot_analysis_results_from_memory(
             analysis,
             detected_params,
             fitted_params,
@@ -142,7 +142,7 @@ def _plot_analysis_results(analysis,
             save_fig, path_to_save_fig
         )
     else:
-        _plot_analysis_results_from_file(
+        return _plot_analysis_results_from_file(
             analysis,
             detected_params,
             fitted_params,
@@ -245,12 +245,9 @@ def plot_analysis_results(
             logging.info(f"Saved figure in {Path(path_to_save_fig).resolve()}")
         else:
             raise ValueError("path_to_save_fig is not defined.")
-        if not plot_result:
-            plt.close()
-            del fig, ax
     if plot_result:
         plt.show()
-    return p
+    return fig, ax
 
 def _plot_analysis_results_from_memory(analysis,
                                       detected_params,
@@ -295,7 +292,9 @@ def _plot_analysis_results_from_memory(analysis,
         frame_num = list(range(len(analysis.pygid_conversion.img_gid_q)))
     if not isinstance(frame_num, list):
         raise TypeError("frame_num should be a list / int / None.")
+    fig_list_global = []
     for num in frame_num:
+        fig_list = []
         if detected_params['plot']:
             img_container_detect = analysis.img_container_detect_list[num]
             detected_params['radius'] = img_container_detect.radius
@@ -314,21 +313,23 @@ def _plot_analysis_results_from_memory(analysis,
             if container_matched is None:
                 if matched_params['plot']:
                     analysis.logger.info(f"Found no matching solution for frame_num {num}")
-                    matched_params['plot'] = False
-                    _plot_single_frame(analysis,
+                    matched_params_local = matched_params.copy()
+                    matched_params_local['plot'] = False
+                    fig, ax = _plot_single_frame(analysis,
                                        analysis.pygid_conversion.img_gid_q[num], analysis.q_xy, analysis.q_z,
                                            detected_params,
                                            fitted_params,
-                                           matched_params,
+                                           matched_params_local,
                                            return_result, plot_result,
                                            clims, xlim, ylim,
                                            save_fig, path_to_save_fig)
+                    fig_list.append((fig,ax))
                     continue
             matched_params['num'] = num
             for field_name, sol in zip(container_matched.field_names, container_matched.results_arrays):
                 matched_params['solution'] = sol
                 matched_params['field_name'] = field_name
-                _plot_single_frame(analysis,
+                fig, ax = _plot_single_frame(analysis,
                                   analysis.pygid_conversion.img_gid_q[num], analysis.q_xy, analysis.q_z,
                                        detected_params,
                                        fitted_params,
@@ -336,8 +337,9 @@ def _plot_analysis_results_from_memory(analysis,
                                        return_result, plot_result,
                                        clims, xlim, ylim,
                                        save_fig, path_to_save_fig)
+                fig_list.append((fig, ax))
         else:
-            _plot_single_frame(analysis,
+            fig, ax = _plot_single_frame(analysis,
                               analysis.pygid_conversion.img_gid_q[num], analysis.q_xy, analysis.q_z,
                                    detected_params,
                                    fitted_params,
@@ -345,6 +347,10 @@ def _plot_analysis_results_from_memory(analysis,
                                    return_result, plot_result,
                                    clims, xlim, ylim,
                                    save_fig, path_to_save_fig)
+            fig_list.append((fig, ax))
+        fig_list_global.extend(fig_list)
+    return fig_list_global
+
 
 
 def _plot_analysis_results_from_file(analysis,
@@ -379,9 +385,10 @@ def _plot_analysis_results_from_file(analysis,
     path_to_save_fig : str or None
         Output file path.
     """
+    fig_list_global = []
     if entry is None:
         for entry in analysis.entry_dict:
-            _plot_analysis_results_single_entry(analysis,
+            fig_list = _plot_analysis_results_single_entry(analysis,
                                                 detected_params,
                                                      fitted_params,
                                                      matched_params,
@@ -390,10 +397,11 @@ def _plot_analysis_results_from_file(analysis,
                                                      return_result, plot_result,
                                                      clims, xlim, ylim,
                                                      save_fig, path_to_save_fig)
-        return
+            fig_list_global.extend(fig_list)
+        return fig_list_global
     if not entry in analysis.entry_dict:
         raise ValueError("entry not found in the NeXus file")
-    _plot_analysis_results_single_entry(analysis,
+    return _plot_analysis_results_single_entry(analysis,
                                         detected_params,
                                              fitted_params,
                                              matched_params,
@@ -435,8 +443,9 @@ def _plot_analysis_results_single_entry(analysis,
         frame_num = list(range(frame_num_all))
     if not isinstance(frame_num, list):
         raise TypeError("frame_num should be a list / int / None.")
+    fig_list_entry = []
     for num in frame_num:
-        _plot_analysis_results_single_frame(
+        fig_list = _plot_analysis_results_single_frame(
             analysis,
             detected_params,
             fitted_params,
@@ -447,7 +456,9 @@ def _plot_analysis_results_single_entry(analysis,
             clims, xlim, ylim,
             save_fig, path_to_save_fig
         )
-        return
+        fig_list_entry.extend(fig_list)
+    return fig_list_entry
+
 
 
 def _plot_analysis_results_single_frame(analysis,
@@ -499,19 +510,20 @@ def _plot_analysis_results_single_frame(analysis,
         if len(container_matched) == 0:
             if matched_params.get('plot', False):
                 analysis.logger.info(f"Found no matching solution for frame_num {frame_num}")
-                matched_params['plot'] = False
+                matched_params_local = matched_params.copy()
+                matched_params_local['plot'] = False
                 path_to_save_fig_modif = f"{name}_{entry}_fr_{frame_num:04d}{fmt}"
-                _plot_single_frame(analysis,
+                return [_plot_single_frame(analysis,
                                   conversion.img_gid_q[0], q_xy, q_z,
                                        detected_params,
                                        fitted_params,
-                                       matched_params,
+                                       matched_params_local,
                                        return_result, plot_result,
                                        clims, xlim, ylim,
-                                       save_fig, path_to_save_fig_modif)
-                return
+                                       save_fig, path_to_save_fig_modif)]
         matched_params['num'] = frame_num
         path_to_save_fig_modif = None
+        fig_list = []
         for sol_ind in range(len(container_matched)):
             field_name, sol = container_matched[sol_ind]
             if field_name.startswith('matched_rings') and not matched_params.get('plot_rings', True):
@@ -521,7 +533,7 @@ def _plot_analysis_results_single_frame(analysis,
             path_to_save_fig_modif = f"{name}_{entry}_fr_{frame_num:04d}_sol_{sol_ind:04d}{fmt}"
             matched_params['solution'] = sol
             matched_params['field_name'] = field_name
-            _plot_single_frame(analysis,
+            fig, ax = _plot_single_frame(analysis,
                               conversion.img_gid_q[0], q_xy, q_z,
                                    detected_params,
                                    fitted_params,
@@ -529,28 +541,30 @@ def _plot_analysis_results_single_frame(analysis,
                                    return_result, plot_result,
                                    clims, xlim, ylim,
                                    save_fig, path_to_save_fig_modif)
-        if path_to_save_fig_modif is None:
-            path_to_save_fig_modif = f"{name}_{entry}_fr_{frame_num:04d}{fmt}"
-            matched_params = matched_params.copy()
-            matched_params['plot'] = False
-            _plot_single_frame(analysis,
-                              conversion.img_gid_q[0], q_xy, q_z,
-                                   detected_params,
-                                   fitted_params,
-                                   matched_params,
-                                   return_result, plot_result,
-                                   clims, xlim, ylim,
-                                   save_fig, path_to_save_fig_modif)
+            fig_list.append((fig, ax))
+        return fig_list
+        # if path_to_save_fig_modif is None:
+        #     path_to_save_fig_modif = f"{name}_{entry}_fr_{frame_num:04d}{fmt}"
+        #     matched_params = matched_params.copy()
+        #     matched_params['plot'] = False
+        #     return [_plot_single_frame(analysis,
+        #                       conversion.img_gid_q[0], q_xy, q_z,
+        #                            detected_params,
+        #                            fitted_params,
+        #                            matched_params,
+        #                            return_result, plot_result,
+        #                            clims, xlim, ylim,
+        #                            save_fig, path_to_save_fig_modif)]
     else:
         path_to_save_fig_modif = f"{name}_{entry}_fr_{frame_num:04d}{fmt}"
-        _plot_single_frame(analysis,
+        return [_plot_single_frame(analysis,
                           conversion.img_gid_q[0], q_xy, q_z,
                                detected_params,
                                fitted_params,
                                matched_params,
                                return_result, plot_result,
                                clims, xlim, ylim,
-                               save_fig, path_to_save_fig_modif)
+                               save_fig, path_to_save_fig_modif)]
 
 
 def _plot_single_frame(analysis,
@@ -580,7 +594,7 @@ def _plot_single_frame(analysis,
         Plot scaling and axis limits.
     save_fig : bool
         Whether to save the figure.
-    path_to_save_fig : str or None
+    path_to_save_fig : str
         Output file path.
     """
     with plt.rc_context(rc=analysis.plot_params):
@@ -592,9 +606,9 @@ def _plot_single_frame(analysis,
             return_result, plot_result,
             clims, xlim, ylim,
             save_fig, path_to_save_fig)
-    
-    
-    
+
+
+
 def _plot_detected(ax, detected_params):
     """
     Overlay detected peak regions on a plot.

@@ -3,15 +3,18 @@ GENERAL:
 
 MODEL:
   TYPE: 'dino'                  #currently supported 'dino' and 'faster_rcnn'
+  ONNX_BASE: base               #model used when ENSEMBLE_ENABLED False; 'base' = auto-downloaded default, or a path to an .onnx
   REDOWNLOAD: False             #redownload the model for each run
   FORCE_CPU: False              #force inference on CPU
+  ENSEMBLE_ENABLED: True       #dino only: fuse ONNX_BASE + ONNX_ENSEMBLE (detection-level)
+  ONNX_ENSEMBLE: ssl_pretrain   #second model, used only when ENSEMBLE_ENABLED True; 'ssl_pretrain' = auto-downloaded SSL model, or a path to an .onnx
 
 PREPROCESSING:
   CUDA: False                   #use CUDA for preprocessing if available
   FLIPHORIZONTAL: False         #flip the image horizontally for preprocessing
   QUAZIPOLAR: False             #use quazipolar transformation for preprocessing 
   LOG: True                     #use log contrast correction for preprocessing
-  HISTOGRAMEQUALIZATION: False  #use histogram equalization for preprocessing
+  HISTOGRAMEQUALIZATION: True   #model trained on histeq input
   PERFORMCLIPPING: True         #perform clipping of pixel values for preprocessing
   HIGHERCLIPPINGPERCENTILE: 99.5 #upper clipping percentile for preprocessing
   LOWERCLIPPINGPERCENTILE: 5.0  #lower clipping percentile for preprocessing
@@ -19,15 +22,14 @@ PREPROCESSING:
   POLAR_CONVERSION: True        #use to perform polar conversion 
 
 POSTPROCESSING:
-  SCORE: 0.4                    #minimum score for peaks
-  NMSIOU: 0.4                   #non maximum suppression iou threshold
-  TTA: False                    #use test time augmentation for postprocessing
+  SCORE: 0.4                    #minimum score for peaks (eval_on_dataset overrides to 0.1)
+  CLASSAWARE_NMS: True          #class-aware ring/segment NMS (required for the 2-class dino model)
 
 INPUT:
-  DATASET: '/home/testuser/mlgidDETECT/inputs/test.h5'  #pygid NeXus h5 file
+  DATASET: '/home/nicolerch/Documents/mlgid/mlgidDETECT_personal/inputs/organic_labeled.h5'  #pygid NeXus labeled h5
   #IMGPATH: './inputs/w4_mapbbr32.tif'  #image file in reciprocal coordinates
-  LABELED: False                #option to use labeled data for evaluation
+  LABELED: True                 #labeled eval -> main.py routes to eval_on_dataset (prints AP)
 
 OUTPUT:
-  IMAGEPREFIX: 'w4_mapbbr32'    #image prefix for saving 
-  FOLDER: './outputs'           #image output folder 
+  IMAGEPREFIX: 'organic'        #image prefix for saving
+  FOLDER: './outputs'           #image output folder

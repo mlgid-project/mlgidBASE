@@ -13,7 +13,7 @@ authors = [
 requires-python = ">=3.8"
 dependencies = [
     "pygid==0.2.13",
-    "mlgiddetect==0.2.7",
+    "mlgiddetect==0.2.8",
     "pygidfit==0.1.3",
     "mlgidmatch==0.1.3",
 ]

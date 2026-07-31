@@ -1,4 +1,4 @@
-from mlgiddetect.inference import Inference
+# from mlgiddetect.inference import Inference
 from mlgiddetect.configuration import Config
 from mlgiddetect.preprocessing import standard_preprocessing
 from mlgiddetect.postprocessing import standard_postprocessing
@@ -65,6 +65,7 @@ def load_inference(analysis):
         Analysis object containing detection configuration.
     """
     try:
+        from mlgiddetect.inference import Inference
         analysis.imp_detect = Inference(analysis.config_detect)
     except:
         raise ValueError("Detection failed. Couldn't load the model.")

@@ -5,4 +5,4 @@ nbsphinx
 myst-nb
 ipykernel
 nbconvert
-mlgidbase>=0.1.6
+mlgidbase>=0.1.5

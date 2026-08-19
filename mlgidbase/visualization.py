@@ -6,7 +6,7 @@ from matplotlib.colors import LogNorm, is_color_like
 from matplotlib.ticker import LogLocator
 import logging
 from pathlib import Path
-from matplotlib.patches import Arc
+from matplotlib.patches import Arc, Wedge
 from itertools import cycle
 import os
 from .pygid_functions import read_conversion_from_nexus, read_detected_peaks, read_fitted_peaks, read_matched_data
@@ -626,12 +626,25 @@ def _plot_detected(ax, detected_params):
     angw = detected_params['angle_width']
 
     for i, (r, dr, a, da) in enumerate(zip(rad, radw, ang, angw)):
-        for sign in (-1, +1):
-            ax.add_patch(Arc((0, 0), 2 * (r + sign * dr), 2 * (r + sign * dr),
-                             theta1=a - da/2, theta2=a + da/2,
-                             lw=detected_params.get('line_width', 0.5),
-                             ls=detected_params.get('line_style', "--"),
-                             color=detected_params.get('line_color', "black")))
+        # for sign in (-1, +1):
+        #     ax.add_patch(Arc((0, 0), 2 * (r + sign * dr), 2 * (r + sign * dr),
+        #                      theta1=a - da/2, theta2=a + da/2,
+        #                      lw=detected_params.get('line_width', 0.5),
+        #                      ls=detected_params.get('line_style', "--"),
+        #                      color=detected_params.get('line_color', "black")))
+        ax.add_patch(
+            Wedge(
+                (0, 0),
+                r + dr,
+                a - da / 2,
+                a + da / 2,
+                width=2 * dr,
+                linewidth=detected_params.get('line_width', '0.01'),
+                linestyle=detected_params.get('line_style', '--'),
+                edgecolor=detected_params.get('line_color', 'black'),
+                facecolor='none',
+            )
+        )
         if detected_params.get('plot_id', False):
             x = r * np.cos(np.deg2rad(a))
             y = r * np.sin(np.deg2rad(a))

@@ -4,7 +4,7 @@ from mlgiddetect.preprocessing import standard_preprocessing
 from mlgiddetect.postprocessing import standard_postprocessing
 from mlgiddetect.preprocessing import (contrast_correction, add_batch_and_color_channel,
                                         grayscale_to_color)
-from mlgiddetect.dataloader import ImageContainer
+
 from .pygid_functions import save_detect, read_conversion_from_nexus
 import importlib.metadata
 import numpy as np
@@ -296,6 +296,7 @@ def run_mlgiddetect(img, q_xy_axes,q_z_axes, imp, config_detect):
         Container with detected peaks and metadata.
     """
     try:
+        from mlgiddetect.dataloader import ImageContainer
         img_container_detect = ImageContainer()
     except:
         logger.warning("Detection failed. Couldn't create ImageContainer()")
@@ -375,6 +376,7 @@ def run_mlgiddetect_from_polar(img, imp, config_detect):
     ImageContainer
         Container with detected peaks and metadata.
     """
+    from mlgiddetect.dataloader import ImageContainer
     img_container_detect = ImageContainer()
     img_container_detect.config = config_detect
     img_container_detect.nr = 0

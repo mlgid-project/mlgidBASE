@@ -1,25 +1,41 @@
+"""End-to-end pipeline tests for mlgidBASE.
+
+The logic for each individual pipeline step lives in its own module:
+
+* detection ........ ``test_detection.py``
+* fitting ........... ``test_fitting.py``
+* matching .......... ``test_matching.py``
+* peak operations ... ``test_peak_operations.py``
+* result saving ..... ``test_data_saver.py``
+
+The steps are stateful and ordered (each one consumes results the previous one
+wrote to the NeXus file), so the two tests below wire the step helpers together
+and run them against a single ``mlgidBASE`` instance.
+"""
+
 import os
-import pytest
+
 from mlgidbase import mlgidBASE
 
-# Compute absolute path to the example folder relative to this test file
-THIS_DIR = os.path.dirname(__file__)
-EXAMPLE_DIR = os.path.abspath(os.path.join(THIS_DIR, "..", "example"))
+from .common import EXAMPLE_DIR, NEXUS_FILE
+from .test_detection import detect_dino, detect_faster
+from .test_fitting import fit
+from .test_matching import match
+from .test_peak_operations import peak_operations
+from .test_data_saver import data_saver
+
 
 def test_from_file():
-    filename = os.path.join(EXAMPLE_DIR, 'BA2PbI4.h5')
-    analysis = mlgidBASE(filename=filename)
+    analysis = mlgidBASE(filename=NEXUS_FILE)
     assert hasattr(analysis, 'nexus')
 
-    _detect_test_dino(analysis)
-    # _detect_test_dino_config(mlgidBASE(filename=filename))
-    _detect_test_faster(mlgidBASE(filename=filename))
-    # _detect_test_faster_config(mlgidBASE(filename=filename))
+    detect_dino(analysis)
+    detect_faster(mlgidBASE(filename=NEXUS_FILE))
 
-    _fit_test(analysis)
-    _match_test(analysis)
+    fit(analysis)
+    match(analysis)
 
-    _peak_operations_test(analysis)
+    peak_operations(analysis)
 
 
 def test_from_conversion():
@@ -65,119 +81,13 @@ def test_from_conversion():
     analysis = mlgidBASE(pygid_conversion=conversion)
     assert hasattr(analysis, 'pygid_conversion')
 
-    _detect_test_dino(analysis)
-    # _detect_test_dino_config(mlgidBASE(pygid_conversion=conversion))
-    _detect_test_faster(mlgidBASE(pygid_conversion=conversion))
-    # _detect_test_faster_config(mlgidBASE(pygid_conversion=conversion))
+    detect_dino(analysis)
+    detect_faster(mlgidBASE(pygid_conversion=conversion))
 
-    _fit_test(analysis)
-    _match_test(analysis)
-    _data_saver_test(analysis, smpl_metadata, exp_metadata, EXAMPLE_DIR)
+    fit(analysis)
+    match(analysis)
+    data_saver(analysis, smpl_metadata, exp_metadata, EXAMPLE_DIR)
 
-
-def _detect_test_dino(analysis):
-    analysis.run_detection(config_detect=None, model_type='dino')
-    analysis.run_detection(entry='entry_0000', frame_num=0, config_detect=None, model_type='dino')
-    assert analysis.config_detect.MODEL_TYPE == 'dino'
-
-def _detect_test_faster(analysis):
-    analysis.run_detection(config_detect=None, model_type='faster_rcnn')
-    analysis.run_detection(entry='entry_0000', frame_num=0, config_detect=None, model_type='faster_rcnn')
-    assert analysis.config_detect.MODEL_TYPE == 'faster_rcnn'
-
-def _detect_test_dino_config(analysis):
-    analysis.run_detection(config_detect=os.path.join(EXAMPLE_DIR, 'dino.yaml'))
-    analysis.run_detection(entry='entry_0000', frame_num=0)
-    assert analysis.config_detect.MODEL_TYPE == 'dino'
-
-def _detect_test_faster_config(analysis):
-    analysis.run_detection(config_detect=os.path.join(EXAMPLE_DIR, 'faster_rcnn.yaml'))
-    analysis.run_detection(entry='entry_0000', frame_num=0)
-    assert analysis.config_detect.MODEL_TYPE == 'faster_rcnn'
-
-def _match_test(analysis):
-    analysis.run_matching(
-        cif_prepr=os.path.join(EXAMPLE_DIR, 'prepr_cifs.pickle'),
-        peaks_type='segments',
-    )
-    analysis.run_matching(
-        cif_prepr=os.path.join(EXAMPLE_DIR, 'prepr_cifs.pickle'),
-        peaks_type='rings',
-    )
-
-def _data_saver_test(analysis, smpl_metadata, exp_metadata, example_dir):
-    analysis.save_result(
-        path_to_save=os.path.join(example_dir, 'BA2PbI4.h5'),
-        smpl_metadata=smpl_metadata,
-        exp_metadata=exp_metadata,
-    )
-
-
-# Other helpers remain mostly the same
-def _fit_test(analysis):
-    analysis.run_fitting(
-        clustering_distance_peaks=10,
-        clustering_distance_rings=10,
-        clustering_extend=2,
-        crit_angle=1,
-    )
-    analysis.run_fitting(
-        entry='entry_0000',
-        frame_num=0,
-        clustering_distance_peaks=10,
-        clustering_distance_rings=10,
-        clustering_extend=2,
-        crit_angle=1,
-    )
-
-
-def _peak_operations_test(analysis):
-    """
-    Test peak deletion and addition operations.
-    """
-    # Delete a peak
-    peaks_before = _get_dataset_test(analysis, 'detected')['amplitude']
-    len_before = len(peaks_before)
-
-    analysis.delete_peak(
-        entry='entry_0000',
-        frame_num=0,
-        peak_id=50  # peak number
-    )
-
-    peaks_after = _get_dataset_test(analysis, 'detected')['amplitude']
-    len_after = len(peaks_after)
-    assert len_after == len_before - 1, "Peak deletion did not reduce length by 1"
-
-    # Add a peak
-    len_before = len(peaks_after)
-    analysis.add_peak(
-        entry='entry_0000',
-        frame_num=0,
-        q_xy=3,
-        q_z=3,
-        dq_xy=0.1,
-        dq_z=0.1,
-    )
-
-    peaks_after_add = _get_dataset_test(analysis, 'detected')['amplitude']
-    len_after_add = len(peaks_after_add)
-    assert len_after_add == len_before + 1, "Peak addition did not increase length by 1"
-
-
-def _get_dataset_test(analysis, dataset_type: str):
-    """
-    Returns the dataset dictionary for a given type.
-    """
-    if dataset_type == 'detected':
-        detected_peaks = analysis.get_detected_peaks()
-        # Safely access entry_0000 -> frame 0
-        try:
-            return detected_peaks['entry_0000']['0']
-        except KeyError:
-            raise KeyError("Dataset 'entry_0000' or frame '0' not found in detected peaks")
-    else:
-        raise ValueError(f"Unknown dataset_type: {dataset_type}")
 
 # Optional main for local test run
 if __name__ == '__main__':

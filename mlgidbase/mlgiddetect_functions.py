@@ -218,8 +218,9 @@ def load_config(config, model_type):
 
     Parameters
     ----------
-    config : str, Config, or None
-        Configuration file path, Config object, or None for default.
+    config : str, dict, Config, or None
+        Configuration file path, configuration dictionary, ``Config`` object,
+        or ``None`` for the default configuration.
 
     Returns
     -------
@@ -228,49 +229,16 @@ def load_config(config, model_type):
     """
     if isinstance(config, str):
         config = Config(config)
-        config.PREPROCESSING_LINEAR_CONTRAST = True
-        if model_type is not None:
-            config.MODEL_TYPE == model_type
+    elif isinstance(config, dict):
+        config_dict = config.copy()
+        config = Config()
+        for section, settings in config_dict.items():
+            for key, value in settings.items():
+                setattr(config, f"{section}_{key}", value)
     elif config is None:
         config = Config()
-        config = set_valid_config(config, model_type)
-    else:
-        config.PREPROCESSING_LINEAR_CONTRAST = True
-    return set_postprocessing_config(config)
-
-
-def set_postprocessing_config(config):
-    if config.MODEL_TYPE == 'dino':
-        config.POSTPROCESSING_SCORE = 0.4
-        config.POSTPROCESSING_NMSIOU = 0.4
-    return config
-
-def set_valid_config(config, model_type):
-    """
-    Apply default preprocessing settings to configuration.
-
-    Parameters
-    ----------
-    config : Config
-        Configuration object.
-
-    Returns
-    -------
-    Config
-        Updated configuration with enforced defaults.
-    """
-    config.PREPROCESSING_CUDA = False
-    config.PREPROCESSING_FLIPHORIZONTAL = False
-    config.PREPROCESSING_QUAZIPOLAR = False
-    config.PREPROCESSING_LINEAR_CONTRAST = True
-    config.PREPROCESSING_NO_CONTRASTCORRECTION = False
-    config.PREPROCESSING_POLAR_SHAPE = [512, 1024]
-    config.PREPROCESSING_POLAR_CONVERSION = True
-    config.PREPROCESSING_LINEAR_PERC_977 = False
     if model_type is not None:
         config.MODEL_TYPE = model_type
-    else:
-        config.MODEL_TYPE == 'dino'
     return config
 
 def run_mlgiddetect(img, q_xy_axes,q_z_axes, imp, config_detect):

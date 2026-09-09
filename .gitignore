@@ -11,6 +11,11 @@ env/
 # Build
 build/
 dist/
+docs/_build/
+
+# Generated example outputs (produced by running the tutorials/tests)
+example/result_from_conversion.h5
+example/result_from_file.h5
 
 # IDE
 .idea/

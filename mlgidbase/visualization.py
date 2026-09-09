@@ -204,7 +204,8 @@ def plot_analysis_results(
         Image object corresponding to the plotted intensity map.
     """
     if clims is None:
-        clims = [np.nanmin(img[img > 0]), np.nanmax(img)]
+        clims = get_clims(img, 5, 95)
+        # clims = [np.nanmin(img[img > 0]), np.nanmax(img)]
 
     fig = plt.figure(constrained_layout=True)
     ax = plt.gca()
@@ -1070,3 +1071,43 @@ def _save_plot_fig(fig, plot_result, save_fig, path_to_save_fig, suffix):
 
     if plot_result:
         plt.show()
+
+
+def get_clims(img, lower_percentile=5, upper_percentile=95):
+    """
+    Estimate color limits for an image.
+
+    Positive values are used if available. The limits are taken from the
+    specified percentiles. If the percentile range collapses (vmin >= vmax),
+    the full data range is used instead.
+
+    Parameters
+    ----------
+    img : ndarray
+        Input image.
+    lower_percentile : float, default=5
+        Lower percentile used to estimate the minimum color limit.
+    upper_percentile : float, default=95
+        Upper percentile used to estimate the maximum color limit.
+
+    Returns
+    -------
+    tuple of float
+        (vmin, vmax)
+    """
+    positive = img[img > 0]
+
+    if positive.size > 0:
+        vmin, vmax = np.nanpercentile(
+            positive,
+            [lower_percentile, upper_percentile]
+        )
+
+        if vmin >= vmax:
+            vmin = np.nanmin(positive)
+            vmax = np.nanmax(positive)
+    else:
+        vmin = np.nanmin(img)
+        vmax = np.nanmax(img)
+
+    return vmin, vmax

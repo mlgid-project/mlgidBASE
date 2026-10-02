@@ -3,6 +3,7 @@ os.environ["MPLCONFIGDIR"] = "/tmp/matplotlib"
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 os.environ["ORT_LOG_VERBOSITY_LEVEL"] = "3"
 
+import re
 import sys
 import logging
 import matplotlib
@@ -13,7 +14,14 @@ sys.path.insert(0, os.path.abspath('..'))
 
 project = 'mlgidBASE'
 author = 'Ainur Abukaev'
-release = '0.1.0'
+
+_init_path = os.path.join(os.path.abspath('..'), 'mlgidbase', '__init__.py')
+with open(_init_path, encoding='utf-8') as _f:
+    _match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', _f.read())
+if _match is None:
+    raise RuntimeError(f"Could not find __version__ in {_init_path}")
+release = _match.group(1)
+version = release
 
 extensions = [
     'sphinx.ext.autodoc',

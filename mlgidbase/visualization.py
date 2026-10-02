@@ -389,6 +389,8 @@ def _plot_analysis_results_from_file(analysis,
     fig_list_global = []
     if entry is None:
         for entry in analysis.entry_dict:
+            if analysis.entry_dict[entry]['img_type'] != 'img_gid_q':
+                continue
             fig_list = _plot_analysis_results_single_entry(analysis,
                                                 detected_params,
                                                      fitted_params,

@@ -14,7 +14,7 @@ requires-python = ">=3.8"
 dependencies = [
     "pygid>=0.2.17",
     "mlgiddetect==0.2.8",
-    "pygidfit==0.1.4",
+    "pygidfit>=0.1.4",
     "mlgidmatch==0.1.3",
 ]
 

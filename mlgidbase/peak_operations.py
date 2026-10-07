@@ -2,9 +2,10 @@ import numpy as np
 from .pygid_functions import read_detected_peaks, read_fitted_peaks, read_fitted_peaks_errors, read_matched_data
 from .widgets import _draw_polar_img
 import logging
-import networkx as nx
 from .visualization import _plot_tracked_peaks
 from scipy.ndimage import median_filter, gaussian_filter1d
+from scipy.sparse import coo_matrix
+from scipy.sparse.csgraph import connected_components
 
 logger = logging.getLogger()
 def _add_peak(analysis, entry, frame_num,
@@ -267,6 +268,52 @@ def calculate_iou_matrix(boxes_a, boxes_b):
     union_area = area_a + area_b - inter_area
     return inter_area / (union_area + 1e-6)
 
+
+# calculate_iou_matrix(box_all, box_all) is O(N**2) memory in N (total
+# fitted peaks across the scan), which OOMs for large scans.
+_IOU_BLOCK_TARGET_BYTES = 1_000_000_000
+_IOU_BYTES_PER_PAIR = 64
+
+
+def _iou_edges_blocked(boxes, threshold):
+    """Upper-triangle (i, j) pairs with IoU(boxes[i], boxes[j]) >= threshold,
+    computed in row blocks instead of one dense (N, N) matrix."""
+    n = len(boxes)
+    block = int(max(16, min(
+        4096,
+        _IOU_BLOCK_TARGET_BYTES // (_IOU_BYTES_PER_PAIR * max(n, 1)),
+    )))
+
+    b = boxes[np.newaxis, :, :]
+    edges_i = []
+    edges_j = []
+    for start in range(0, n, block):
+        stop = min(start + block, n)
+        a = boxes[start:stop, np.newaxis, :]
+
+        x_left = np.maximum(a[..., 0], b[..., 0])
+        y_top = np.maximum(a[..., 1], b[..., 1])
+        x_right = np.minimum(a[..., 2], b[..., 2])
+        y_bottom = np.minimum(a[..., 3], b[..., 3])
+
+        inter_area = np.maximum(0, x_right - x_left) * np.maximum(0, y_bottom - y_top)
+        area_a = (a[..., 2] - a[..., 0]) * (a[..., 3] - a[..., 1])
+        area_b = (b[..., 2] - b[..., 0]) * (b[..., 3] - b[..., 1])
+        union_area = area_a + area_b - inter_area
+
+        iou = inter_area / (union_area + 1e-6)
+        np.nan_to_num(iou, copy=False, nan=0.0)
+
+        ii, jj = np.nonzero(iou >= threshold)
+        keep = (ii + start) < jj
+        edges_i.append((ii[keep] + start).astype(np.int64))
+        edges_j.append(jj[keep].astype(np.int64))
+
+    if not edges_i:
+        return np.empty(0, dtype=np.int64), np.empty(0, dtype=np.int64)
+    return np.concatenate(edges_i), np.concatenate(edges_j)
+
+
 def _track_peaks(analysis, entry, threshold, length, axis, plot_params):
     """
         Track fitted peaks across frames using IoU-based graph clustering.
@@ -314,7 +361,8 @@ def _track_peaks(analysis, entry, threshold, length, axis, plot_params):
         Notes
         -----
         - Peak connectivity is defined in (angle, radius) space via IoU of bounding boxes.
-        - Graph connectivity is computed using NetworkX connected components.
+        - Graph connectivity is computed using scipy sparse connected components,
+          with the IoU built in bounded-memory row blocks instead of one dense array.
         - Only components larger than `length` are retained.
         """
 
@@ -369,17 +417,18 @@ def _track_peaks(analysis, entry, threshold, length, axis, plot_params):
     is_rings_all = np.concatenate(fields['is_ring'])
     angles_all = np.concatenate(fields['angle'])
 
-    IoU_all = calculate_iou_matrix(box_all, box_all)
-    IoU_all[IoU_all < threshold] = 0
-    IoU_all[np.isnan(IoU_all)] = 0
-    IoU_all[IoU_all >= threshold] = 1
+    n_peaks = len(box_all)
+    edges_i, edges_j = _iou_edges_blocked(box_all, threshold)
+    adjacency = coo_matrix(
+        (np.ones(len(edges_i), dtype=np.int8), (edges_i, edges_j)),
+        shape=(n_peaks, n_peaks),
+    )
+    _, labels = connected_components(adjacency, directed=False)
 
-    G = nx.from_numpy_array(IoU_all)
-    G_comps = nx.connected_components(G)
-    G_comps_list = []
-    for G1 in G_comps:
-        if len(list(G1)) > length:
-            G_comps_list.append(list(G1))
+    order = np.argsort(labels, kind="stable")
+    boundaries = np.flatnonzero(np.diff(labels[order])) + 1
+    G_comps_list = [g.tolist() for g in np.split(order, boundaries) if g.size > length]
+    G_comps_list.sort(key=lambda comp: comp[0])
 
     tracking_arrays = {
         "radius": (

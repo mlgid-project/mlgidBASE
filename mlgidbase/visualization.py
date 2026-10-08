@@ -1055,13 +1055,83 @@ def _plot_tracked_peaks(plot_defaults, q_xy_all, q_z_all, frame_num_all, G_comps
                        suffix="_evolution")
 
 
-def _save_plot_fig(fig, plot_result, save_fig, path_to_save_fig, suffix):
+def _plot_tracked_peaks_from_series(plot_defaults, series, label, line_width, line_style, marker_size,
+                                    marker_styles, q_xy_range, q_z_range, axis_range, plot_result, save_fig,
+                                    path_to_save_fig, return_fig):
+    """Plots tracks grouped by matched CIF (one marker/color/legend entry
+    per phase, 'unmatched' included) instead of one color per track, as two
+    equally-sized subplots of one figure: q_xy vs q_z, and axis vs frame."""
+    if marker_styles is None:
+        marker_styles = ['o', 's', '^', 'D', 'v', 'P', '*', 'X']
+
+    groups = {}
+    for s in series:
+        groups.setdefault(s['CIF'], []).append(s)
+    cif_names = sorted(groups.keys())
+    colors = plt.cm.tab20(np.linspace(0, 1, max(len(cif_names), 1)))
+
+    with plt.rc_context(rc=plot_defaults):
+        base_w, base_h = plt.rcParams['figure.figsize']
+        fig, (ax1, ax2) = plt.subplots(1, 2, constrained_layout=True, figsize=(2 * base_w, base_h))
+        ax1.set_box_aspect(1)
+        ax2.set_box_aspect(1)
+
+        ring_theta = np.linspace(0, np.pi / 2, 100)
+
+        for i, cif in enumerate(cif_names):
+            marker = marker_styles[i % len(marker_styles)]
+            color = colors[i]
+            labeled = False
+            for j, s in enumerate(groups[cif]):
+                ring_mask = s['is_ring']
+                spot_mask = ~ring_mask
+
+                if np.any(spot_mask):
+                    ax1.plot(s['q_xy'][spot_mask], s['q_z'][spot_mask], marker=marker, linestyle=line_style,
+                            ms=marker_size, lw=line_width, color=color,
+                            label=cif if not labeled else None)
+                    labeled = True
+
+                for r in s['radius'][ring_mask]:
+                    ax1.plot(r * np.cos(ring_theta), r * np.sin(ring_theta), linestyle=line_style,
+                            lw=line_width, color=color, label=cif if not labeled else None)
+                    labeled = True
+
+                lbl = cif if j == 0 else None
+                ax2.plot(s['frame_num'], s['axis'], marker=marker, linestyle=line_style,
+                        ms=marker_size, lw=line_width, color=color, label=lbl)
+
+        ax1.grid(True, alpha=0.3)
+        ax1.set_xlabel(r'$q_{xy}$ [$\mathrm{\AA}^{-1}$]')
+        ax1.set_ylabel(r'$q_{z}$ [$\mathrm{\AA}^{-1}$]')
+        ax1.set_aspect("equal")
+        if q_xy_range is not None:
+            ax1.set_xlim(q_xy_range)
+        if q_z_range is not None:
+            ax1.set_ylim(q_z_range)
+        ax1.legend()
+
+        ax2.set_xlabel("Frame #")
+        ax2.set_ylabel(label)
+        ax2.grid(True, alpha=0.3)
+        if axis_range is not None:
+            ax2.set_ylim(axis_range)
+        ax2.legend()
+
+        _save_plot_fig(fig, plot_result, save_fig, path_to_save_fig)
+
+    if return_fig:
+        return fig, (ax1, ax2)
+
+
+def _save_plot_fig(fig, plot_result, save_fig, path_to_save_fig, suffix=""):
     if save_fig:
         if path_to_save_fig is None:
             raise ValueError("path_to_save_fig is not defined.")
 
         path = Path(path_to_save_fig)
-        path = path.with_name(f"{path.stem}_{suffix}{path.suffix}")
+        if suffix:
+            path = path.with_name(f"{path.stem}_{suffix}{path.suffix}")
 
         path.parent.mkdir(parents=True, exist_ok=True)
 

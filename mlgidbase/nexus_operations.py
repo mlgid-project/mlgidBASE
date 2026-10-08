@@ -1,4 +1,4 @@
-from .pygid_functions import read_detected_peaks, read_fitted_peaks, read_matched_data, read_matched_data
+from .pygid_functions import read_detected_peaks, read_fitted_peaks, read_matched_data, read_tracked_peaks
 import logging
 logger = logging.getLogger()
 
@@ -10,6 +10,25 @@ def _get_fitted_peaks(nexus, entry, frame_num):
 
 def _get_matched_peaks(nexus, entry, frame_num):
     return _read_dataset(nexus,entry,frame_num,'matched_peaks')
+
+def _get_tracked_peaks(nexus, entry):
+    """Like _get_fitted_peaks etc., but scan-wide (no frame_num): one
+    tracked-peaks table per img_gid_q entry (the only kind track_peaks
+    ever writes one for). Entries without a saved table are skipped
+    (call track_peaks first)."""
+    dataset = {}
+    entries = list(nexus.entry_dict) if entry is None else (entry if isinstance(entry, list) else [entry])
+    for e in entries:
+        if e not in nexus.entry_dict:
+            logger.info("entry not found in the NeXus file")
+            continue
+        if nexus.entry_dict[e]['img_type'] != 'img_gid_q':
+            continue
+        try:
+            dataset[e] = read_tracked_peaks(nexus.path, e)
+        except ValueError:
+            logger.info(f"No tracked_peaks table for entry {e!r}; call track_peaks first.")
+    return dataset
 
 def _read_dataset(nexus,entry,frame_num,name):
     dataset = {}

@@ -1,8 +1,13 @@
 import numpy as np
-from .pygid_functions import read_detected_peaks, read_fitted_peaks, read_fitted_peaks_errors, read_matched_data
+from collections import Counter
+from datetime import datetime
+import importlib.metadata
+from .pygid_functions import (read_detected_peaks, read_fitted_peaks, read_fitted_peaks_errors,
+                              read_matched_data, read_all_matched_data, save_tracked_peaks,
+                              read_tracked_peaks)
 from .widgets import _draw_polar_img
 import logging
-from .visualization import _plot_tracked_peaks
+from .visualization import _plot_tracked_peaks, _plot_tracked_peaks_from_series
 from scipy.ndimage import median_filter, gaussian_filter1d
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
@@ -314,57 +319,16 @@ def _iou_edges_blocked(boxes, threshold):
     return np.concatenate(edges_i), np.concatenate(edges_j)
 
 
-def _track_peaks(analysis, entry, threshold, length, axis, plot_params):
-    """
-        Track fitted peaks across frames using IoU-based graph clustering.
-
-        The function extracts fitted peak parameters from the analysis object,
-        constructs bounding boxes in (angle, radius) space, and computes pairwise
-        Intersection over Union (IoU) to define temporal connectivity between peaks.
-        A graph is then built from the IoU matrix, and connected components are
-        interpreted as tracked peak trajectories.
-
-        Parameters
-        ----------
-        analysis : object
-            Analysis container providing access to fitted peak data via
-            `analysis.get_fitted_peaks()`.
-        entry : hashable
-            Key identifying the dataset entry containing peak fits.
-        threshold : float
-            IoU threshold used to define connectivity between peaks. Values below
-            this threshold are discarded.
-        length : int
-            Minimum number of connected nodes required for a component to be
-            considered a valid track.
-        axis : {'radius', 'angle', 'amplitude', 'q_z', 'q_xy'}
-            Physical quantity to be used for tracking output.
-        plot_params : dict
-            Dictionary controlling visualization options. Expected keys include
-            'plot_result' and 'save_fig'.
-
-        Returns
-        -------
-        axis : list[ndarray]
-            List of arrays of the selected tracked quantity corresponding to all peak instances.
-        amplitude : list[ndarray]
-            List of arrays with corresponding amplitudes values for all tracked peaks.
-        frame_num : list[ndarray]
-            List of arrays with frame numbers where peak are present.
-
-        Raises
-        ------
-        ValueError
-            If `axis` is not one of the supported tracking variables: 'angle', 'radius',
-            'amplitude', 'q_z', 'q_xy'.
-
-        Notes
-        -----
-        - Peak connectivity is defined in (angle, radius) space via IoU of bounding boxes.
-        - Graph connectivity is computed using scipy sparse connected components,
-          with the IoU built in bounded-memory row blocks instead of one dense array.
-        - Only components larger than `length` are retained.
-        """
+def _compute_peak_tracks(analysis, entry, threshold, length):
+    """Shared by _track_peaks and _save_track_results: extracts fitted-peak
+    boxes/fields for every frame, clusters them by IoU into tracks (bounded
+    memory), and returns the per-peak arrays plus the surviving components.
+    Caches its result on `analysis` so a same-params save right after a
+    _track_peaks call reuses it instead of recomputing."""
+    cache_key = (entry, threshold, length)
+    cached = getattr(analysis, '_peak_tracks_cache', None)
+    if cached is not None and cached[0] == cache_key:
+        return cached[1]
 
     fitted_peaks_dict = analysis.get_fitted_peaks()[entry]
 
@@ -430,6 +394,68 @@ def _track_peaks(analysis, entry, threshold, length, axis, plot_params):
     G_comps_list = [g.tolist() for g in np.split(order, boundaries) if g.size > length]
     G_comps_list.sort(key=lambda comp: comp[0])
 
+    result = (G_comps_list, frame_num_all, peak_num_all, q_z_all, q_xy_all,
+              radius_all, amplitude_all, angles_all, is_rings_all)
+    analysis._peak_tracks_cache = (cache_key, result)
+    return result
+
+
+def _track_peaks(analysis, entry, threshold, length, axis, plot_params):
+    """
+        Track fitted peaks across frames using IoU-based graph clustering.
+
+        The function extracts fitted peak parameters from the analysis object,
+        constructs bounding boxes in (angle, radius) space, and computes pairwise
+        Intersection over Union (IoU) to define temporal connectivity between peaks.
+        A graph is then built from the IoU matrix, and connected components are
+        interpreted as tracked peak trajectories.
+
+        Parameters
+        ----------
+        analysis : object
+            Analysis container providing access to fitted peak data via
+            `analysis.get_fitted_peaks()`.
+        entry : hashable
+            Key identifying the dataset entry containing peak fits.
+        threshold : float
+            IoU threshold used to define connectivity between peaks. Values below
+            this threshold are discarded.
+        length : int
+            Minimum number of connected nodes required for a component to be
+            considered a valid track.
+        axis : {'radius', 'angle', 'amplitude', 'q_z', 'q_xy'}
+            Physical quantity to be used for tracking output.
+        plot_params : dict
+            Dictionary controlling visualization options. Expected keys include
+            'plot_result' and 'save_fig'.
+
+        Returns
+        -------
+        axis : list[ndarray]
+            List of arrays of the selected tracked quantity corresponding to all peak instances.
+        amplitude : list[ndarray]
+            List of arrays with corresponding amplitudes values for all tracked peaks.
+        frame_num : list[ndarray]
+            List of arrays with frame numbers where peak are present.
+
+        Raises
+        ------
+        ValueError
+            If `axis` is not one of the supported tracking variables: 'angle', 'radius',
+            'amplitude', 'q_z', 'q_xy'.
+
+        Notes
+        -----
+        - Peak connectivity is defined in (angle, radius) space via IoU of bounding boxes.
+        - Graph connectivity is computed using scipy sparse connected components,
+          with the IoU built in bounded-memory row blocks instead of one dense array.
+        - Only components larger than `length` are retained.
+        """
+
+    (G_comps_list, frame_num_all, peak_num_all, q_z_all, q_xy_all,
+     radius_all, amplitude_all, angles_all, is_rings_all) = _compute_peak_tracks(
+        analysis, entry, threshold, length)
+
     tracking_arrays = {
         "radius": (
             radius_all,
@@ -468,3 +494,146 @@ def _track_peaks(analysis, entry, threshold, length, axis, plot_params):
         amplitude_list.append(amplitude_all[index][order])
 
     return axis_arr_list, amplitude_list, frame_num_list
+
+
+def build_tracked_peaks_dtype(n_frames):
+    """Dtype for the tracked-peaks table: id, CIF/h/k/l (phase attribution,
+    'unmatched'/NaN if none), then one column per frame holding that track's
+    fitted-peak id in that frame (NaN if absent)."""
+    frame_fields = [(f"frame{str(i).zfill(5)}", "f4") for i in range(n_frames)]
+    return np.dtype(
+        [("id", "i4"), ("CIF", "S64"), ("h", "f4"), ("k", "f4"), ("l", "f4")] + frame_fields
+    )
+
+
+def _build_tracked_peaks_table(analysis, entry, components, frame_num_all, peak_num_all):
+    n_frames = analysis.entry_dict[entry]['shape'][0]
+    frame_matches = read_all_matched_data(analysis.filename, entry, n_frames)
+
+    tracked_peaks_dtype = build_tracked_peaks_dtype(n_frames)
+    tracked_peaks = np.full(len(components), np.nan, dtype=tracked_peaks_dtype)
+
+    for track_id, members in enumerate(components):
+        tracked_peaks['id'][track_id] = track_id
+        tracked_peaks['CIF'][track_id] = b"unmatched"
+
+        votes, max_prob = Counter(), {}
+        for member in members:
+            frame = int(frame_num_all[member])
+            local_id = int(peak_num_all[member])
+            tracked_peaks[f"frame{str(frame).zfill(5)}"][track_id] = local_id
+            for cif, h, k, l, prob in frame_matches.get(frame, {}).get(local_id, []):
+                key = (cif, h, k, l)
+                votes[key] += 1
+                max_prob[key] = max(prob, max_prob.get(key, -1.0))
+
+        if votes:
+            cif, h, k, l = max(votes, key=lambda key: (votes[key], max_prob[key]))
+            tracked_peaks['CIF'][track_id] = cif
+            tracked_peaks['h'][track_id] = h
+            tracked_peaks['k'][track_id] = k
+            tracked_peaks['l'][track_id] = l
+
+    return tracked_peaks
+
+
+def _save_track_results(analysis, entry, threshold, length):
+    """Builds and saves the tracked-peaks table. Reuses _compute_peak_tracks's
+    cache when called right after _track_peaks with the same params."""
+    components, frame_num_all, peak_num_all = _compute_peak_tracks(analysis, entry, threshold, length)[:3]
+    tracked_peaks = _build_tracked_peaks_table(analysis, entry, components, frame_num_all, peak_num_all)
+    metadata = {
+        'program': 'mlgidbase',
+        'version': importlib.metadata.version('mlgidbase'),
+        'date': datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'),
+        'threshold': threshold,
+        'length': length,
+    }
+    save_tracked_peaks(analysis.filename, entry, tracked_peaks, metadata=metadata)
+    return tracked_peaks
+
+
+TRACKING_AXIS_FIELDS = {
+    'radius': ('radius', r"Radius [$\mathrm{\AA}^{-1}$]"),
+    'angle': ('angle', r"Azimuthal angle [$^\circ$]"),
+    'q_z': ('q_z', r"$q_z$ [$\mathrm{\AA}^{-1}$]"),
+    'q_xy': ('q_xy', r"$q_{xy}$ [$\mathrm{\AA}^{-1}$]"),
+}
+
+# which range kwarg of plot_tracked_peaks sets the evolution plot's y-limits,
+# depending on the chosen axis
+TRACKING_AXIS_RANGE_PARAM = {
+    'radius': 'radial_range',
+    'angle': 'angular_range',
+    'q_z': 'q_z_range',
+    'q_xy': 'q_xy_range',
+}
+
+
+def _load_tracked_peaks_series(analysis, entry, axis):
+    """Reconstructs, per saved track, the (frame, axis value, q_xy, q_z,
+    amplitude) series from the entry's fitted_peaks, plus the track's CIF
+    label for legend grouping."""
+    if axis not in TRACKING_AXIS_FIELDS:
+        raise ValueError(f"Invalid axis '{axis}'. Valid options are: {list(TRACKING_AXIS_FIELDS.keys())}")
+    axis_field, label = TRACKING_AXIS_FIELDS[axis]
+
+    tracked_peaks = read_tracked_peaks(analysis.filename, entry)
+    frame_cols = [n for n in tracked_peaks.dtype.names if n.startswith('frame')]
+    fitted_peaks_dict = analysis.get_fitted_peaks()[entry]
+
+    series = []
+    for row in tracked_peaks:
+        frames, axis_vals, q_xy_vals, q_z_vals, amps, radii, is_ring = [], [], [], [], [], [], []
+        for frame, col in enumerate(frame_cols):
+            val = row[col]
+            if np.isnan(val):
+                continue
+            fitted_peaks = fitted_peaks_dict.get(str(frame))
+            local_id = int(val)
+            if fitted_peaks is None or local_id >= len(fitted_peaks):
+                continue
+            frames.append(frame)
+            axis_vals.append(float(fitted_peaks[axis_field][local_id]))
+            q_xy_vals.append(float(fitted_peaks['q_xy'][local_id]))
+            q_z_vals.append(float(fitted_peaks['q_z'][local_id]))
+            amps.append(float(fitted_peaks['amplitude'][local_id]))
+            radii.append(float(fitted_peaks['radius'][local_id]))
+            is_ring.append(bool(fitted_peaks['is_ring'][local_id]))
+        if not frames:
+            continue
+        order = np.argsort(frames)
+        cif = row['CIF']
+        series.append({
+            'id': int(row['id']),
+            'CIF': cif.decode() if isinstance(cif, bytes) else str(cif),
+            'frame_num': np.asarray(frames)[order],
+            'axis': np.asarray(axis_vals)[order],
+            'q_xy': np.asarray(q_xy_vals)[order],
+            'q_z': np.asarray(q_z_vals)[order],
+            'amplitude': np.asarray(amps)[order],
+            'radius': np.asarray(radii)[order],
+            'is_ring': np.asarray(is_ring)[order],
+        })
+    return series, label
+
+
+def _plot_tracked_peaks_for_entry(analysis, entry, axis, plot_result, save_fig, path_to_save_fig,
+                                  line_width, line_style, marker_size, marker_styles,
+                                  q_xy_range, q_z_range, radial_range, angular_range,
+                                  return_fig, return_result):
+    series, label = _load_tracked_peaks_series(analysis, entry, axis)
+    ranges = {'q_xy_range': q_xy_range, 'q_z_range': q_z_range,
+             'radial_range': radial_range, 'angular_range': angular_range}
+    axis_range = ranges[TRACKING_AXIS_RANGE_PARAM[axis]]
+    fig_result = _plot_tracked_peaks_from_series(
+        analysis.plot_params, series, label, line_width, line_style, marker_size,
+        marker_styles, q_xy_range, q_z_range, axis_range, plot_result, save_fig, path_to_save_fig, return_fig,
+    )
+
+    if return_result:
+        axis_arr = [s['axis'] for s in series]
+        amplitude = [s['amplitude'] for s in series]
+        frame_num = [s['frame_num'] for s in series]
+        return axis_arr, amplitude, frame_num
+    return fig_result

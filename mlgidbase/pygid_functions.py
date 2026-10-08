@@ -181,6 +181,91 @@ def save_match(filename, entry, frame_num, container_matched):
         pygid._save_matched_data(f, group_name, container_matched)
         return
 
+def save_tracked_peaks(filename, entry, tracked_peaks, metadata=None):
+    """
+    Save a peak-tracking results table to a NeXus file.
+
+    Parameters
+    ----------
+    filename : str
+        Path to the NeXus file.
+    entry : str
+        Entry name.
+    tracked_peaks : np.ndarray
+        Structured array with the tracking results, one row per track.
+    metadata : dict, optional
+        Process metadata, saved under /{entry}/process/peak_tracking.
+    """
+    with File(filename, "r+") as f:
+        pygid._save_tracked_peaks_data(f, entry, tracked_peaks, metadata=metadata)
+        return
+
+
+def read_tracked_peaks(filename, entry):
+    """
+    Read the saved peak-tracking table for an entry.
+
+    Parameters
+    ----------
+    filename : str
+        Path to the NeXus file.
+    entry : str
+        Entry name.
+
+    Returns
+    -------
+    np.ndarray
+        Structured array with the tracking results, one row per track.
+    """
+    with h5py.File(filename, "r") as f:
+        ds = f.get(f"{entry}/data/analysis/general/tracked_peaks")
+        if ds is None:
+            raise ValueError(f"No tracked_peaks table for entry {entry!r}; call track_peaks first.")
+        return ds[()]
+
+
+def read_all_matched_data(filename, entry, n_frames):
+    """
+    Read matched structural solutions for every frame of an entry.
+
+    Parameters
+    ----------
+    filename : str
+        Path to the NeXus file.
+    entry : str
+        Entry name.
+    n_frames : int
+        Number of frames in the entry.
+
+    Returns
+    -------
+    dict
+        {frame: {fitted_peak_id: [(CIF, h, k, l, probability), ...]}}
+    """
+    index = {}
+    with h5py.File(filename, "r") as f:
+        ana = f.get(f"{entry}/data/analysis")
+        if ana is None:
+            return index
+        for frame in range(n_frames):
+            grp = ana.get(f"frame{str(frame).zfill(5)}")
+            if grp is None:
+                continue
+            frame_index = {}
+            for key in grp:
+                if not key.startswith("matched_"):
+                    continue
+                for row in grp[key][()]:
+                    cif = bytes(row['CIF'])
+                    h, k, l = int(row['h']), int(row['k']), int(row['l'])
+                    prob = float(row['probability'])
+                    for pid in np.asarray(row['peak_list'], dtype=int):
+                        frame_index.setdefault(int(pid), []).append((cif, h, k, l, prob))
+            if frame_index:
+                index[frame] = frame_index
+    return index
+
+
 def get_nexus(filename):
     """
     Open a NeXus file.

@@ -7,8 +7,8 @@ from .mlgiddetect_functions import _run_detection
 from .pygidfit_functions import _run_fitting
 from .mlgidmatch_functions import _run_matching
 from .visualization import get_plot_params, _plot_analysis_results
-from .peak_operations import _delete_peak, _add_peak, _draw_box, _track_peaks
-from .nexus_operations import _get_detected_peaks, _get_fitted_peaks, _get_matched_peaks
+from .peak_operations import _delete_peak, _add_peak, _draw_box, _save_track_results, _plot_tracked_peaks_for_entry
+from .nexus_operations import _get_detected_peaks, _get_fitted_peaks, _get_matched_peaks, _get_tracked_peaks
 from mlgidmatch.preprocess.cif_preprocess import CifPattern
 
 
@@ -496,6 +496,9 @@ class mlgidBASE:
     def get_matched_peaks(self, entry=None, frame_num=None):
         return _get_matched_peaks(self.nexus, entry=entry, frame_num=frame_num)
 
+    def get_tracked_peaks(self, entry=None):
+        return _get_tracked_peaks(self.nexus, entry=entry)
+
     def add_peak(self, entry=None, frame_num=None,
                  angle=None, angle_width = None,
                  radius = None, radius_width = None,
@@ -510,79 +513,145 @@ class mlgidBASE:
     def draw_box(self, entry=None, frame_num=None):
         _draw_box(self, entry=entry, frame_num=frame_num)
 
-    def track_peaks(self, entry=None, threshold=0.5, length=10, axis='radius',
-                    plot_params={
-                        'plot_result': True,
-                        'save_fig': False,
-                        'path_to_save_fig':'peak_tracking.png',
-                        'line_width': 0.5,
-                        'line_style': '--',
-                        'marker_size': 1,}):
+    def track_peaks(self, entry=None, threshold=0.5, length=10):
         """
-            Track fitted peaks across frames using IoU-based graph clustering.
+            Track fitted peaks across frames and save the results to the NeXus file.
 
-            The function extracts fitted peak parameters from the analysis object,
-            constructs bounding boxes in (angle, radius) space, and computes pairwise
-            Intersection over Union (IoU) to define temporal connectivity between peaks.
-            A graph is then built from the IoU matrix, and connected components are
-            interpreted as tracked peak trajectories.
+            Peaks are represented as bounding boxes in (angle, radius) space.
+            Pairwise overlap between every two peaks is measured by IoU,
+            thresholded into a graph, and connected components with more than
+            `length` members become tracks. Each track is then attributed to
+            whichever matched structure (if any) claims most of its members.
 
             Parameters
             ----------
-            analysis : object
-                Analysis container providing access to fitted peak data via
-                `analysis.get_fitted_peaks()`.
-            entry : hashable
-                Key identifying the dataset entry containing peak fits.
+            entry : hashable, list, or None
+                Entry/entries to track. None tracks every img_gid_q entry.
             threshold : float
-                IoU threshold used to define connectivity between peaks. Values below
-                this threshold are discarded.
+                IoU threshold above which two peaks are considered linked.
             length : int
-                Minimum number of connected nodes required for a component to be
-                considered a valid track.
-            axis : {'radius', 'angle', 'amplitude', 'q_z', 'q_xy'}
-                Physical quantity to be used for tracking output.
-            plot_params : dict
-                Dictionary controlling visualization options. Expected keys include
-                'plot_result' and 'save_fig'.
+                Minimum track size, in members, to keep.
 
             Returns
             -------
-            axis : list[ndarray]
-                List of arrays of the selected tracked quantity corresponding to all peak instances.
-            amplitude : list[ndarray]
-                List of arrays with corresponding amplitudes values for all tracked peaks.
-            frame_num : list[ndarray]
-                List of arrays with frame numbers where peak are present.
-
-            Raises
-            ------
-            ValueError
-                If `axis` is not one of the supported tracking variables: 'angle', 'radius',
-                'amplitude', 'q_z', 'q_xy'.
+            np.ndarray
+                The saved tracked-peaks table, one row per track (see
+                `build_tracked_peaks_dtype`). A dict {entry: table} instead
+                when multiple entries are processed.
 
             Notes
             -----
-            - Peak connectivity is defined in (angle, radius) space via IoU of bounding boxes.
-            - Graph connectivity is computed using NetworkX connected components.
-            - Only components larger than `length` are retained.
+            Saved to the NeXus file under data/analysis/general/tracked_peaks.
+            Use `plot_tracked_peaks` to visualize, and `get_tracked_peaks` to
+            read the table back later without recomputing anything.
         """
-
         if not self.from_nexus:
             self.logger.info("Only file processing is currently supported.")
             return
         if entry is None:
-            for entry in self.entry_dict:
-                if self.entry_dict[entry]['img_type'] != 'img_gid_q':
-                    continue
-                return _track_peaks(self, entry, threshold, length, axis, plot_params)
-            return
+            entries = [e for e in self.entry_dict if self.entry_dict[e]['img_type'] == 'img_gid_q']
         elif isinstance(entry, list):
             for e in entry:
                 if not e in self.entry_dict:
                     raise ValueError("entry not found in the NeXus file")
-                return _track_peaks(self, e, threshold, length, axis, plot_params)
+            entries = entry
         else:
             if not entry in self.entry_dict:
                 raise ValueError("entry not found in the NeXus file")
-            return _track_peaks(self, entry, threshold, length, axis, plot_params)
+            entries = [entry]
+
+        results = {e: _save_track_results(self, e, threshold, length) for e in entries}
+
+        if len(results) == 1:
+            return next(iter(results.values()))
+        return results
+
+    def plot_tracked_peaks(self, entry=None, axis='radius',
+                           plot_result=True, save_fig=False, path_to_save_fig='peak_tracking.png',
+                           line_width=0.5, line_style='-', marker_size=3, marker_styles=None,
+                           q_xy_range=None, q_z_range=None, radial_range=None, angular_range=None,
+                           return_fig=False, return_result=False):
+        """
+            Plot tracks saved by `track_peaks`, loaded back from the NeXus file.
+
+            Draws one figure with two equally-sized subplots: q_xy vs q_z, and
+            `axis` vs frame number. Tracks are grouped and colored by their
+            matched CIF ('unmatched' is its own group), cycling through
+            `marker_styles` per group, with one legend entry per group. Rings
+            are drawn as arcs at their radius, not as points at a fixed angle.
+
+            Parameters
+            ----------
+            entry : hashable, list, or None
+                Entry/entries to plot. None plots every img_gid_q entry.
+            axis : {'radius', 'angle', 'q_z', 'q_xy'}
+                Quantity plotted against frame number in the second subplot.
+            plot_result : bool
+                Whether to display the figure.
+            save_fig : bool
+                Whether to save the figure to path_to_save_fig.
+            path_to_save_fig : str
+                Path for the saved figure.
+            line_width, line_style, marker_size : plot styling, shared by all tracks.
+            marker_styles : list or None
+                Marker shapes cycled over matched-structure groups.
+            q_xy_range, q_z_range : tuple or None
+                x/y limits of the q_xy-vs-q_z subplot. Whichever of these
+                matches the chosen `axis` (q_xy_range for axis='q_xy',
+                q_z_range for axis='q_z') also sets the y-limits of the
+                second subplot.
+            radial_range, angular_range : tuple or None
+                y-limits of the second subplot when axis='radius' or
+                axis='angle', respectively.
+            return_fig : bool
+                If True, returns the figure.
+            return_result : bool
+                If True, returns the per-track (axis, amplitude, frame_num)
+                lists reconstructed from the saved table instead — same shape
+                as the old track_peaks legacy-path return: len(axis) ==
+                len(amplitude) == len(frame_num), one entry per surviving
+                track. Mutually exclusive with return_fig.
+
+            Returns
+            -------
+            tuple or None or dict
+                The returned value depends on the `return_result` and
+                `return_fig` arguments (per entry; a dict keyed by entry
+                instead when several are processed):
+                - If `return_result=True` and `return_fig=False`:
+                  `(axis, amplitude, frame_num)`
+                - If `return_result=False` and `return_fig=True`:
+                  `(fig, (ax1, ax2))`
+                - If `return_result=True` and `return_fig=True`:
+                  raise a ValueError
+                - If both are False:
+                  `None`.
+
+            Raises
+            ------
+            ValueError
+                If both `return_fig` and `return_result` are True.
+        """
+        if return_fig and return_result:
+            raise ValueError("Cannot set both return_fig and return_result to True. Please choose one.")
+        if entry is None:
+            entries = [e for e in self.entry_dict if self.entry_dict[e]['img_type'] == 'img_gid_q']
+        elif isinstance(entry, list):
+            entries = entry
+        else:
+            entries = [entry]
+
+        results = {}
+        for e in entries:
+            results[e] = _plot_tracked_peaks_for_entry(
+                self, e, axis, plot_result, save_fig, path_to_save_fig,
+                line_width, line_style, marker_size, marker_styles,
+                q_xy_range, q_z_range, radial_range, angular_range,
+                return_fig, return_result,
+            )
+
+        if not return_fig and not return_result:
+            return
+        if len(results) == 1:
+            return next(iter(results.values()))
+        return results

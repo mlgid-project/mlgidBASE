@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mlgidbase"
-version = "0.1.8"
+version = "0.1.9"
 description = "A comprehensive toolbox for grazing-incidence diffraction"
 readme = { file = "README.md", content-type = "text/markdown"}
 authors = [
@@ -12,7 +12,7 @@ authors = [
 ]
 requires-python = ">=3.8"
 dependencies = [
-    "pygid>=0.2.17",
+    "pygid>=0.2.18",
     "mlgiddetect==0.2.8",
     "pygidfit>=0.1.4",
     "mlgidmatch==0.1.3",

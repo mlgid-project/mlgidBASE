@@ -513,7 +513,7 @@ class mlgidBASE:
     def draw_box(self, entry=None, frame_num=None):
         _draw_box(self, entry=entry, frame_num=frame_num)
 
-    def track_peaks(self, entry=None, threshold=0.5, length=10):
+    def track_peaks(self, entry=None, threshold=0.5, length=10, window_size=None):
         """
             Track fitted peaks across frames and save the results to the NeXus file.
 
@@ -531,6 +531,12 @@ class mlgidBASE:
                 IoU threshold above which two peaks are considered linked.
             length : int
                 Minimum track size, in members, to keep.
+            window_size : int or None
+                If given, two peaks are never linked when more than
+                `window_size` frames apart, however high their IoU (e.g. a
+                peak at frame 10 and one at frame 230 are never connected if
+                window_size=50). None (default): no limit, matching the
+                original behavior.
 
             Returns
             -------
@@ -560,7 +566,7 @@ class mlgidBASE:
                 raise ValueError("entry not found in the NeXus file")
             entries = [entry]
 
-        results = {e: _save_track_results(self, e, threshold, length) for e in entries}
+        results = {e: _save_track_results(self, e, threshold, length, window_size) for e in entries}
 
         if len(results) == 1:
             return next(iter(results.values()))

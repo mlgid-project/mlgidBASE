@@ -280,9 +280,12 @@ _IOU_BLOCK_TARGET_BYTES = 1_000_000_000
 _IOU_BYTES_PER_PAIR = 64
 
 
-def _iou_edges_blocked(boxes, threshold):
+def _iou_edges_blocked(boxes, threshold, frame_num=None, window_size=None):
     """Upper-triangle (i, j) pairs with IoU(boxes[i], boxes[j]) >= threshold,
-    computed in row blocks instead of one dense (N, N) matrix."""
+    computed in row blocks instead of one dense (N, N) matrix.
+
+    If `window_size` is given (with `frame_num`, one entry per box), pairs
+    more than `window_size` frames apart are dropped regardless of IoU."""
     n = len(boxes)
     block = int(max(16, min(
         4096,
@@ -311,6 +314,9 @@ def _iou_edges_blocked(boxes, threshold):
 
         ii, jj = np.nonzero(iou >= threshold)
         keep = (ii + start) < jj
+        if window_size is not None:
+            gap = np.abs(frame_num[start:stop][ii] - frame_num[jj])
+            keep &= gap <= window_size
         edges_i.append((ii[keep] + start).astype(np.int64))
         edges_j.append(jj[keep].astype(np.int64))
 
@@ -319,13 +325,16 @@ def _iou_edges_blocked(boxes, threshold):
     return np.concatenate(edges_i), np.concatenate(edges_j)
 
 
-def _compute_peak_tracks(analysis, entry, threshold, length):
+def _compute_peak_tracks(analysis, entry, threshold, length, window_size=None):
     """Shared by _track_peaks and _save_track_results: extracts fitted-peak
     boxes/fields for every frame, clusters them by IoU into tracks (bounded
     memory), and returns the per-peak arrays plus the surviving components.
     Caches its result on `analysis` so a same-params save right after a
-    _track_peaks call reuses it instead of recomputing."""
-    cache_key = (entry, threshold, length)
+    _track_peaks call reuses it instead of recomputing.
+
+    window_size, if given, drops any IoU edge between peaks more than
+    window_size frames apart, regardless of IoU (None: no limit)."""
+    cache_key = (entry, threshold, length, window_size)
     cached = getattr(analysis, '_peak_tracks_cache', None)
     if cached is not None and cached[0] == cache_key:
         return cached[1]
@@ -382,7 +391,7 @@ def _compute_peak_tracks(analysis, entry, threshold, length):
     angles_all = np.concatenate(fields['angle'])
 
     n_peaks = len(box_all)
-    edges_i, edges_j = _iou_edges_blocked(box_all, threshold)
+    edges_i, edges_j = _iou_edges_blocked(box_all, threshold, frame_num_all, window_size)
     adjacency = coo_matrix(
         (np.ones(len(edges_i), dtype=np.int8), (edges_i, edges_j)),
         shape=(n_peaks, n_peaks),
@@ -537,10 +546,11 @@ def _build_tracked_peaks_table(analysis, entry, components, frame_num_all, peak_
     return tracked_peaks
 
 
-def _save_track_results(analysis, entry, threshold, length):
+def _save_track_results(analysis, entry, threshold, length, window_size=None):
     """Builds and saves the tracked-peaks table. Reuses _compute_peak_tracks's
     cache when called right after _track_peaks with the same params."""
-    components, frame_num_all, peak_num_all = _compute_peak_tracks(analysis, entry, threshold, length)[:3]
+    components, frame_num_all, peak_num_all = _compute_peak_tracks(
+        analysis, entry, threshold, length, window_size)[:3]
     tracked_peaks = _build_tracked_peaks_table(analysis, entry, components, frame_num_all, peak_num_all)
     metadata = {
         'program': 'mlgidbase',
@@ -548,6 +558,7 @@ def _save_track_results(analysis, entry, threshold, length):
         'date': datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'),
         'threshold': threshold,
         'length': length,
+        'window_size': window_size,
     }
     save_tracked_peaks(analysis.filename, entry, tracked_peaks, metadata=metadata)
     return tracked_peaks

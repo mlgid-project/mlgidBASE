@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from mlgidbase.peak_operations import _track_peaks, calculate_iou_matrix
+from mlgidbase.peak_operations import _track_peaks, _compute_peak_tracks, calculate_iou_matrix
 
 FITTED_PEAKS_DTYPE = np.dtype([
     ("id", "i8"),
@@ -64,6 +64,44 @@ def test_iou_edges_blocked_matches_dense(block_target_bytes, monkeypatch):
         edges_i, edges_j = po._iou_edges_blocked(boxes, threshold)
         got = set(zip(edges_i.tolist(), edges_j.tolist()))
         assert got == expected, f"threshold={threshold}"
+
+
+def test_iou_edges_blocked_window_size():
+    import mlgidbase.peak_operations as po
+
+    # Identical boxes (IoU=1) at frames 0, 40, 100: gaps are 40, 60, 100.
+    boxes = np.array([[10.0, 10.0, 12.0, 12.0]] * 3)
+    frame_num = np.array([0, 40, 100])
+
+    edges_i, edges_j = po._iou_edges_blocked(boxes, 0.5, frame_num, None)
+    assert set(zip(edges_i.tolist(), edges_j.tolist())) == {(0, 1), (0, 2), (1, 2)}
+
+    edges_i, edges_j = po._iou_edges_blocked(boxes, 0.5, frame_num, window_size=50)
+    assert set(zip(edges_i.tolist(), edges_j.tolist())) == {(0, 1)}
+
+    # window=70 keeps both (0,1) [gap 40] and (1,2) [gap 60], dropping only the
+    # direct (0,2) [gap 100] edge -- connected components still chain 0-1-2
+    # into one track through the intermediate peak, despite the direct gap
+    # exceeding window_size. That's intentional: the window bounds each edge,
+    # not the span of the resulting track.
+    edges_i, edges_j = po._iou_edges_blocked(boxes, 0.5, frame_num, window_size=70)
+    assert set(zip(edges_i.tolist(), edges_j.tolist())) == {(0, 1), (1, 2)}
+
+
+def test_compute_peak_tracks_window_size_disconnects_distant_frames():
+    box = dict(angle=20.0, angle_width=1.0, radius=10.0, radius_width=0.3,
+              q_z=1.0, q_xy=10.0, amplitude=100.0, is_ring=False)
+    fitted_peaks_by_frame = {
+        0: _make_fitted_peaks([{"id": 0, **box}]),
+        100: _make_fitted_peaks([{"id": 0, **box}]),
+    }
+    analysis = _FakeAnalysis(fitted_peaks_by_frame)
+
+    components = _compute_peak_tracks(analysis, "entry_0000", 0.5, 1)[0]
+    assert components == [[0, 1]], "identical boxes 100 frames apart should link without a window"
+
+    components = _compute_peak_tracks(analysis, "entry_0000", 0.5, 1, window_size=50)[0]
+    assert components == [], "window_size=50 must disconnect peaks 100 frames apart"
 
 
 def _reference_track_peaks_dense(analysis, entry, threshold, length, axis):

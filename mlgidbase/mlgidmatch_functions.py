@@ -59,6 +59,33 @@ def _run_matching(analysis, entry=None, frame_num=None, cif_prepr=None,
         _run_matching_from_file(analysis, entry, frame_num, probability_threshold, peaks_type, intensity_threshold)
 
 
+def _merge_matched_containers(existing, new, peaks_type):
+    """Combine a new peaks_type's matching results with whatever this frame
+    already has, replacing only that same peaks_type's own entries -- so
+    calling e.g. 'rings' twice still just overwrites the rings results, but
+    calling 'rings' then 'segments' keeps both instead of the second call
+    wiping out the first."""
+    if existing is None:
+        return new
+
+    prefix = f"matched_{peaks_type}_"
+    kept = [(name, arr) for name, arr in zip(existing.field_names, existing.results_arrays)
+            if not name.startswith(prefix)]
+    kept_names = [name for name, _ in kept]
+    kept_arrays = [arr for _, arr in kept]
+
+    metadata = dict(existing.metadata or {})
+    prior_types = [t for t in str(metadata.get('peaks_type', '')).split('+') if t and t != peaks_type]
+    metadata.update(new.metadata or {})
+    metadata['peaks_type'] = '+'.join(prior_types + [peaks_type])
+
+    return ContainerMatched(
+        kept_arrays + new.results_arrays,
+        kept_names + new.field_names,
+        metadata,
+    )
+
+
 def _run_matching_from_memory(analysis, threshold, peaks_type, int_min):
     """
     Perform peak matching using in-memory fitted results.
@@ -77,20 +104,33 @@ def _run_matching_from_memory(analysis, threshold, peaks_type, int_min):
     Returns
     -------
     None
-        Updates analysis.container_match_list with matching results.
+        Updates analysis.container_match_list with matching results. Calling
+        this again with a different peaks_type (e.g. 'rings' then 'segments')
+        merges into the existing per-frame results instead of replacing them
+        -- see _merge_matched_containers.
     """
-    analysis.container_match_list = []
     if analysis.img_container_fit_list is None:
         raise ValueError("img_container_fit_list is not defined. Call run_fitting before run_fitting")
+    if (not isinstance(getattr(analysis, 'container_match_list', None), list)
+            or len(analysis.container_match_list) != len(analysis.img_container_fit_list)):
+        analysis.container_match_list = [None] * len(analysis.img_container_fit_list)
     for frame_num, img_container_fit in enumerate(analysis.img_container_fit_list):
         if img_container_fit is None:
-            analysis.container_match_list.append(None)
             continue
         amplitude_full = img_container_fit.amplitude
         int_mask = amplitude_full > int_min
 
         q_xy_max = np.nanmax(img_container_fit.q_xy)
         q_z_max = np.nanmax(img_container_fit.q_z)
+
+        # mlgidmatch treats (q_xy_max, q_z_max) as a rectangle, but in-memory
+        # fitting's polar image covers the bigger disk out to their diagonal
+        # (see pygid_utils.py's radial_range) -- pass the diagonal for both
+        # so a real peak just outside the rectangle isn't wrongly excluded
+        # or normalized out of mlgidmatch's grid. Harmless for 'rings' (just
+        # a looser-than-needed bound; nothing real exceeds the true diagonal
+        # anyway).
+        q_xy_max, q_z_max = (np.sqrt(q_xy_max ** 2 + q_z_max ** 2),) * 2
 
         # original indices
         original_indices = np.arange(len(amplitude_full))
@@ -118,7 +158,6 @@ def _run_matching_from_memory(analysis, threshold, peaks_type, int_min):
                                                 frame_num,
                                                 intensity_roi, indices_roi, n_total)
         if unique_solutions == {}:
-            analysis.container_match_list.append(None)
             analysis.logger.info(f"No solutions was found. Try to decrease the threshold")
             continue
         unique_solutions['peaks_type'] = peaks_type
@@ -129,7 +168,9 @@ def _run_matching_from_memory(analysis, threshold, peaks_type, int_min):
             CIFs=analysis.match_class.config.cif_prepr.cifs,
             device=analysis.match_class.device,
         )
-        analysis.container_match_list.append(solution2container(unique_solutions))
+        new_container = solution2container(unique_solutions)
+        analysis.container_match_list[frame_num] = _merge_matched_containers(
+            analysis.container_match_list[frame_num], new_container, peaks_type)
 
 
 def _run_matching_from_file(analysis, entry, frame_num, threshold, peaks_type, int_min):

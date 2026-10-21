@@ -241,6 +241,11 @@ def read_all_matched_data(filename, entry, n_frames):
     -------
     dict
         {frame: {fitted_peak_id: [(CIF, h, k, l, probability), ...]}}
+
+        `peak_list` in the matched_* datasets holds fitted-peak array
+        *positions* (see mlgidmatch_functions.py), not `id` values -- each
+        position is translated here via that frame's fitted_peaks['id'],
+        so the returned dict is keyed by the stable id instead.
     """
     index = {}
     with h5py.File(filename, "r") as f:
@@ -251,16 +256,24 @@ def read_all_matched_data(filename, entry, n_frames):
             grp = ana.get(f"frame{str(frame).zfill(5)}")
             if grp is None:
                 continue
+            matched_keys = [key for key in grp if key.startswith("matched_")]
+            if not matched_keys:
+                continue
+            fitted_peaks = grp.get("fitted_peaks")
+            if fitted_peaks is None:
+                continue
+            position_to_id = fitted_peaks["id"][()]
             frame_index = {}
-            for key in grp:
-                if not key.startswith("matched_"):
-                    continue
+            for key in matched_keys:
                 for row in grp[key][()]:
                     cif = bytes(row['CIF'])
                     h, k, l = int(row['h']), int(row['k']), int(row['l'])
                     prob = float(row['probability'])
-                    for pid in np.asarray(row['peak_list'], dtype=int):
-                        frame_index.setdefault(int(pid), []).append((cif, h, k, l, prob))
+                    for pos in np.asarray(row['peak_list'], dtype=int):
+                        if pos < 0 or pos >= len(position_to_id):
+                            continue
+                        real_id = int(position_to_id[pos])
+                        frame_index.setdefault(real_id, []).append((cif, h, k, l, prob))
             if frame_index:
                 index[frame] = frame_index
     return index

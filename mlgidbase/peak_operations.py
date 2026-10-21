@@ -618,21 +618,34 @@ def _load_tracked_peaks_series(analysis, entry, axis):
     tracked_peaks = read_tracked_peaks(analysis.filename, entry)
     fitted_peaks_dict = analysis.get_fitted_peaks()[entry]
 
+    # peak_ids stores each fitted peak's stable 'id' field, which only
+    # equals its row position when ids have never been left with gaps
+    # (e.g. after mlgidBASE.delete_peak's renumbering) -- map id -> position
+    # per frame instead of indexing with the id directly.
+    id_to_pos_cache = {}
+
     series = []
     for row in tracked_peaks:
         frames, axis_vals, q_xy_vals, q_z_vals, amps, radii, is_ring = [], [], [], [], [], [], []
         for frame, local_id in zip(row['frames'], row['peak_ids']):
             frame, local_id = int(frame), int(local_id)
             fitted_peaks = fitted_peaks_dict.get(str(frame))
-            if fitted_peaks is None or local_id >= len(fitted_peaks):
+            if fitted_peaks is None:
+                continue
+            id_to_pos = id_to_pos_cache.get(frame)
+            if id_to_pos is None:
+                id_to_pos = {int(pid): pos for pos, pid in enumerate(fitted_peaks['id'])}
+                id_to_pos_cache[frame] = id_to_pos
+            pos = id_to_pos.get(local_id)
+            if pos is None:
                 continue
             frames.append(frame)
-            axis_vals.append(float(fitted_peaks[axis_field][local_id]))
-            q_xy_vals.append(float(fitted_peaks['q_xy'][local_id]))
-            q_z_vals.append(float(fitted_peaks['q_z'][local_id]))
-            amps.append(float(fitted_peaks['amplitude'][local_id]))
-            radii.append(float(fitted_peaks['radius'][local_id]))
-            is_ring.append(bool(fitted_peaks['is_ring'][local_id]))
+            axis_vals.append(float(fitted_peaks[axis_field][pos]))
+            q_xy_vals.append(float(fitted_peaks['q_xy'][pos]))
+            q_z_vals.append(float(fitted_peaks['q_z'][pos]))
+            amps.append(float(fitted_peaks['amplitude'][pos]))
+            radii.append(float(fitted_peaks['radius'][pos]))
+            is_ring.append(bool(fitted_peaks['is_ring'][pos]))
         if not frames:
             continue
         order = np.argsort(frames)

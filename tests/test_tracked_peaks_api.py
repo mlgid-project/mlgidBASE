@@ -137,3 +137,57 @@ def test_build_tracked_peaks_table_many_frames_no_header_overflow(tmp_path):
         saved = f["/entry/data/analysis/general/tracked_peaks"][()]
     assert saved.shape == (2,)
     assert list(saved["frames"][0]) == [0, n_frames - 1]
+
+
+def test_remap_tracked_peaks_on_delete_noop_without_table(tmp_path):
+    """delete_peak must not fail when no tracked_peaks table has ever been
+    saved for the entry."""
+    import h5py
+    from mlgidbase.peak_operations import _remap_tracked_peaks_on_delete
+
+    path = tmp_path / "no_table.h5"
+    with h5py.File(path, "w"):
+        pass
+
+    _remap_tracked_peaks_on_delete(str(path), "entry", frame_num=0, peak_id=1)  # must not raise
+
+
+def test_remap_tracked_peaks_on_delete_shifts_and_drops(tmp_path):
+    """Deleting peak_id=1 in frame 0 must: leave entries below it alone,
+    drop the entry that referenced it, and shift entries above it down by
+    one -- mirroring the renumbering delete_peak applies to that frame's
+    detected/fitted 'id' column."""
+    import h5py
+    from mlgidbase.peak_operations import build_tracked_peaks_dtype, _remap_tracked_peaks_on_delete
+    from mlgidbase.pygid_functions import save_tracked_peaks, read_tracked_peaks
+
+    path = tmp_path / "remap.h5"
+    dtype = build_tracked_peaks_dtype()
+    tracked_peaks = np.empty(3, dtype=dtype)
+    tracked_peaks['h'] = np.nan
+    tracked_peaks['k'] = np.nan
+    tracked_peaks['l'] = np.nan
+    tracked_peaks['CIF'] = b"unmatched"
+    tracked_peaks['id'] = [0, 1, 2]
+    # track 0: frame0/id0 (untouched, below the deleted id) + frame1/id0
+    # (different frame entirely, must stay untouched)
+    tracked_peaks['frames'][0] = np.array([0, 1], dtype=np.int32)
+    tracked_peaks['peak_ids'][0] = np.array([0, 0], dtype=np.int32)
+    # track 1: frame0/id2 (above the deleted id -> shifts to id1)
+    tracked_peaks['frames'][1] = np.array([0], dtype=np.int32)
+    tracked_peaks['peak_ids'][1] = np.array([2], dtype=np.int32)
+    # track 2: frame0/id1 (exactly the deleted peak -> entry dropped)
+    tracked_peaks['frames'][2] = np.array([0], dtype=np.int32)
+    tracked_peaks['peak_ids'][2] = np.array([1], dtype=np.int32)
+
+    with h5py.File(path, "w"):
+        pass
+    save_tracked_peaks(str(path), "entry", tracked_peaks)
+
+    _remap_tracked_peaks_on_delete(str(path), "entry", frame_num=0, peak_id=1)
+
+    result = {int(row['id']): (list(row['frames']), list(row['peak_ids']))
+              for row in read_tracked_peaks(str(path), "entry")}
+    assert result[0] == ([0, 1], [0, 0])
+    assert result[1] == ([0], [1])
+    assert result[2] == ([], [])

@@ -212,7 +212,7 @@ def _delete_peak_single_frame(analysis, entry, frame_num, peak_id):
     except ValueError:
         analysis.logger.info(f"No matched peak {peak_id} for entry {entry}; frame_num {frame_num}")
 
-
+    _remap_tracked_peaks_on_delete(analysis.filename, entry, frame_num, peak_id)
 
 
 
@@ -246,6 +246,42 @@ def _delete_matched_peaks(analysis, entry, frame_num, peak_id):
             sol['peak_list'][i] = np.array([int(x - 1) if x > peak_id else int(x) for x in sol['peak_list'][i] if x != peak_id])
         analysis.nexus.change_dataset(f"/{entry}/data/analysis/frame{str(frame_num).zfill(5)}/{name}",
                                       data=sol)
+
+
+def _remap_tracked_peaks_on_delete(filename, entry, frame_num, peak_id):
+    """Keep an already-saved tracked_peaks table consistent with a
+    detected/fitted-peak delete: within frame_num, drop the entry that
+    referenced the deleted peak_id and shift every other entry's id down
+    by one if it was above peak_id -- mirroring the renumbering
+    _delete_detected_peak/_delete_fitted_peaks just applied to that
+    frame's id column. No-op if no tracked_peaks table has been saved."""
+    try:
+        tracked_peaks = read_tracked_peaks(filename, entry)
+    except ValueError:
+        return
+
+    changed = False
+    for row in tracked_peaks:
+        new_frames, new_peak_ids = [], []
+        row_changed = False
+        for frame, local_id in zip(row['frames'], row['peak_ids']):
+            frame, local_id = int(frame), int(local_id)
+            if frame == frame_num:
+                if local_id == peak_id:
+                    row_changed = True
+                    continue
+                if local_id > peak_id:
+                    local_id -= 1
+                    row_changed = True
+            new_frames.append(frame)
+            new_peak_ids.append(local_id)
+        if row_changed:
+            row['frames'] = np.asarray(new_frames, dtype=np.int32)
+            row['peak_ids'] = np.asarray(new_peak_ids, dtype=np.int32)
+            changed = True
+
+    if changed:
+        save_tracked_peaks(filename, entry, tracked_peaks)
 
 
 def _draw_box(analysis, entry, frame_num):

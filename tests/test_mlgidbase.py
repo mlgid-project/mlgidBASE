@@ -7,6 +7,7 @@ The logic for each individual pipeline step lives in its own module:
 * matching .......... ``test_matching.py``
 * peak operations ... ``test_peak_operations.py``
 * peak tracking ..... ``test_tracked_peaks_api.py``
+* visualization ..... ``test_visualization.py``
 * result saving ..... ``test_data_saver.py``
 
 The steps are stateful and ordered (each one consumes results the previous one
@@ -24,6 +25,7 @@ from .test_fitting import fit
 from .test_matching import match
 from .test_peak_operations import peak_operations
 from .test_tracked_peaks_api import tracked_peaks_api
+from .test_visualization import visualization_smoke_test
 from .test_data_saver import data_saver
 
 
@@ -39,6 +41,7 @@ def test_from_file():
 
     peak_operations(analysis)
     tracked_peaks_api(analysis)
+    visualization_smoke_test(analysis)
 
 
 def test_from_conversion():

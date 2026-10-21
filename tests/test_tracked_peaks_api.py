@@ -20,8 +20,9 @@ def tracked_peaks_api(analysis):
 def track_peaks_fast_path(analysis):
     table = analysis.track_peaks(threshold=0.1, length=1)
     assert isinstance(table, np.ndarray)
-    assert table.dtype.names[:5] == ("id", "CIF", "h", "k", "l")
-    assert all(name.startswith("frame") for name in table.dtype.names[5:])
+    assert table.dtype.names == ("id", "CIF", "h", "k", "l", "frames", "peak_ids")
+    for row in table:
+        assert len(row["frames"]) == len(row["peak_ids"])
 
     try:
         analysis.track_peaks(threshold=0.1, length=1, axis="radius")
@@ -43,7 +44,13 @@ def get_tracked_peaks_roundtrip(analysis, table):
     assert isinstance(tracked_by_entry, dict)
     for entry, tp in tracked_by_entry.items():
         assert analysis.entry_dict[entry]['img_type'] == 'img_gid_q'
-        assert tp.dtype == table.dtype
+        # names/kinds only, not full dtype equality: a value read back from
+        # HDF5 carries explicit per-field offsets for the vlen columns that
+        # a freshly built array doesn't, so the dtype *objects* differ even
+        # though the schema is identical.
+        assert tp.dtype.names == table.dtype.names
+        for name in table.dtype.names:
+            assert tp.dtype[name].kind == table.dtype[name].kind
 
 
 def plot_tracked_peaks_flags(analysis, table):
@@ -99,3 +106,34 @@ def test_build_tracked_peaks_table_without_any_matched_data(tmp_path):
     assert table.shape == (1,)
     assert table["CIF"][0] == b"unmatched"
     assert np.isnan(table["h"][0]) and np.isnan(table["k"][0]) and np.isnan(table["l"][0])
+
+
+def test_build_tracked_peaks_table_many_frames_no_header_overflow(tmp_path):
+    """Regression test: a one-column-per-frame table hits HDF5's 64KB
+    object-header limit around 1000 frames (the compound dtype's on-disk
+    description grows with every column). The frames/peak_ids vlen design
+    must not reintroduce that limit, however many frames the scan has."""
+    import h5py
+    from mlgidbase.peak_operations import _build_tracked_peaks_table
+    from mlgidbase.pygid_functions import save_tracked_peaks
+
+    n_frames = 1200  # past the ~1000-frame point where the old design failed
+    path = tmp_path / "many_frames.h5"
+    with h5py.File(path, "w"):
+        pass  # no frame groups needed -- read_all_matched_data tolerates that
+
+    class _FakeAnalysis:
+        filename = str(path)
+        entry_dict = {"entry": {"shape": (n_frames, 10, 10)}}
+
+    components = [[0, 1], [2, 3]]
+    frame_num_all = np.array([0, n_frames - 1, 5, 6])
+    peak_num_all = np.array([0, 0, 0, 0])
+
+    table = _build_tracked_peaks_table(_FakeAnalysis(), "entry", components, frame_num_all, peak_num_all)
+    save_tracked_peaks(str(path), "entry", table)  # used to raise ValueError here
+
+    with h5py.File(path, "r") as f:
+        saved = f["/entry/data/analysis/general/tracked_peaks"][()]
+    assert saved.shape == (2,)
+    assert list(saved["frames"][0]) == [0, n_frames - 1]

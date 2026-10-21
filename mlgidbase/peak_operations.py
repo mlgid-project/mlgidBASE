@@ -1,4 +1,5 @@
 import numpy as np
+import h5py
 from collections import Counter
 from datetime import datetime
 import importlib.metadata
@@ -505,36 +506,61 @@ def _track_peaks(analysis, entry, threshold, length, axis, plot_params):
     return axis_arr_list, amplitude_list, frame_num_list
 
 
-def build_tracked_peaks_dtype(n_frames):
+def build_tracked_peaks_dtype(n_frames=None):
     """Dtype for the tracked-peaks table: id, CIF/h/k/l (phase attribution,
-    'unmatched'/NaN if none), then one column per frame holding that track's
-    fitted-peak id in that frame (NaN if absent)."""
-    frame_fields = [(f"frame{str(i).zfill(5)}", "f4") for i in range(n_frames)]
-    return np.dtype(
-        [("id", "i4"), ("CIF", "S64"), ("h", "f4"), ("k", "f4"), ("l", "f4")] + frame_fields
-    )
+    'unmatched'/NaN if none), then `frames`/`peak_ids` -- parallel
+    variable-length arrays holding, per track, the frames it has a member in
+    and that frame's fitted-peak id (same convention as the `peak_list`
+    vlen field already used for matched peaks).
+
+    A fixed column per frame (the original design) hits HDF5's 64KB
+    object-header limit once a scan has roughly 1000+ frames, since the
+    compound dtype's on-disk description grows with every column; vlen
+    arrays keep the dtype's size independent of scan length.
+
+    n_frames is accepted (unused) so existing positional callers don't
+    need to change."""
+    vlen_int = h5py.vlen_dtype(np.int32)
+    return np.dtype([
+        ("id", "i4"), ("CIF", "S64"), ("h", "f4"), ("k", "f4"), ("l", "f4"),
+        ("frames", vlen_int), ("peak_ids", vlen_int),
+    ])
 
 
 def _build_tracked_peaks_table(analysis, entry, components, frame_num_all, peak_num_all):
     n_frames = analysis.entry_dict[entry]['shape'][0]
     frame_matches = read_all_matched_data(analysis.filename, entry, n_frames)
 
-    tracked_peaks_dtype = build_tracked_peaks_dtype(n_frames)
-    tracked_peaks = np.full(len(components), np.nan, dtype=tracked_peaks_dtype)
+    tracked_peaks_dtype = build_tracked_peaks_dtype()
+    tracked_peaks = np.empty(len(components), dtype=tracked_peaks_dtype)
+    # vlen fields must hold a real array in every row before the first HDF5
+    # write, or h5py segfaults on the leftover scalar -- set these for every
+    # row up front, not just the ones a later step happens to touch.
+    for track_id in range(len(components)):
+        tracked_peaks['frames'][track_id] = np.empty(0, dtype=np.int32)
+        tracked_peaks['peak_ids'][track_id] = np.empty(0, dtype=np.int32)
+    tracked_peaks['h'] = np.nan
+    tracked_peaks['k'] = np.nan
+    tracked_peaks['l'] = np.nan
 
     for track_id, members in enumerate(components):
         tracked_peaks['id'][track_id] = track_id
         tracked_peaks['CIF'][track_id] = b"unmatched"
 
+        frames_list, peak_ids_list = [], []
         votes, max_prob = Counter(), {}
         for member in members:
             frame = int(frame_num_all[member])
             local_id = int(peak_num_all[member])
-            tracked_peaks[f"frame{str(frame).zfill(5)}"][track_id] = local_id
+            frames_list.append(frame)
+            peak_ids_list.append(local_id)
             for cif, h, k, l, prob in frame_matches.get(frame, {}).get(local_id, []):
                 key = (cif, h, k, l)
                 votes[key] += 1
                 max_prob[key] = max(prob, max_prob.get(key, -1.0))
+
+        tracked_peaks['frames'][track_id] = np.asarray(frames_list, dtype=np.int32)
+        tracked_peaks['peak_ids'][track_id] = np.asarray(peak_ids_list, dtype=np.int32)
 
         if votes:
             cif, h, k, l = max(votes, key=lambda key: (votes[key], max_prob[key]))
@@ -590,18 +616,14 @@ def _load_tracked_peaks_series(analysis, entry, axis):
     axis_field, label = TRACKING_AXIS_FIELDS[axis]
 
     tracked_peaks = read_tracked_peaks(analysis.filename, entry)
-    frame_cols = [n for n in tracked_peaks.dtype.names if n.startswith('frame')]
     fitted_peaks_dict = analysis.get_fitted_peaks()[entry]
 
     series = []
     for row in tracked_peaks:
         frames, axis_vals, q_xy_vals, q_z_vals, amps, radii, is_ring = [], [], [], [], [], [], []
-        for frame, col in enumerate(frame_cols):
-            val = row[col]
-            if np.isnan(val):
-                continue
+        for frame, local_id in zip(row['frames'], row['peak_ids']):
+            frame, local_id = int(frame), int(local_id)
             fitted_peaks = fitted_peaks_dict.get(str(frame))
-            local_id = int(val)
             if fitted_peaks is None or local_id >= len(fitted_peaks):
                 continue
             frames.append(frame)

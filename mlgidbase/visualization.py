@@ -642,7 +642,7 @@ def _plot_detected(ax, detected_params):
                 a - da / 2,
                 a + da / 2,
                 width=2 * dr,
-                linewidth=detected_params.get('line_width', '0.01'),
+                linewidth=detected_params.get('line_width', 0.01),
                 linestyle=detected_params.get('line_style', '--'),
                 edgecolor=detected_params.get('line_color', 'black'),
                 facecolor='none',
@@ -673,35 +673,6 @@ def _plot_fitted(ax, fitted_params):
 
     if fitted_params.get('plot_rings', True):
         _plot_fitted_rings(ax, fitted_params, rings, amp, rad)
-
-# def _plot_fitted_peaks(ax, fitted_params, mask, amp, qxy, qz):
-#     if mask.any():
-#         norm = LogNorm(vmin=max(amp[mask].min(), 1e-3), vmax=amp[mask].max())
-#         cmap = plt.get_cmap(fitted_params.get('marker_edgecolor', 'bone'))
-#         colors = cmap(norm(amp[mask]))
-#
-#         ax.scatter(
-#             qxy[mask],
-#             qz[mask],
-#             facecolors=fitted_params.get('marker_facecolor', 'none'),
-#             edgecolors=colors,
-#             marker=fitted_params.get('marker', 'o'),
-#             s=fitted_params.get('marker_size', 50),
-#         )
-#         # --- labels inside scatter ---
-#         if fitted_params.get('plot_id', False):
-#             idx_non_ring = np.where(mask)[0]
-#             for i, x, y in zip(idx_non_ring, qxy[mask], qz[mask]):
-#                 ax.text(x, y, str(i),
-#                         ha='center', va='center',
-#                         fontsize=fitted_params.get('text_size', 8),
-#                         color=fitted_params.get('text_color', "black"),
-#                         clip_on=True,)
-
-
-# import matplotlib.pyplot as plt
-
-
 
 def _plot_fitted_peaks(ax, fitted_params, mask, amp, qxy, qz):
     if mask.any():

@@ -168,7 +168,7 @@ def _run_matching_from_memory(analysis, threshold, peaks_type, int_min):
             CIFs=analysis.match_class.config.cif_prepr.cifs,
             device=analysis.match_class.device,
         )
-        new_container = solution2container(unique_solutions)
+        new_container = solution2container(unique_solutions, fitted_ids=img_container_fit.id)
         analysis.container_match_list[frame_num] = _merge_matched_containers(
             analysis.container_match_list[frame_num], new_container, peaks_type)
 
@@ -266,7 +266,7 @@ def _run_matching_single_frame(analysis, entry, frame_num, threshold, peaks_type
     int_min : float
         Minimum peak intensity threshold.
     """
-    unique_solutions = run_mlgidmatch_from_file(analysis.nexus, entry, frame_num, analysis.match_class,
+    unique_solutions, fitted_ids = run_mlgidmatch_from_file(analysis.nexus, entry, frame_num, analysis.match_class,
                                                 threshold, peaks_type, int_min)
     if unique_solutions == {}:
         analysis.logger.info(f"No solutions for ({analysis.filename}, entry: {entry}, frame: {frame_num}) was found. "
@@ -282,7 +282,7 @@ def _run_matching_single_frame(analysis, entry, frame_num, threshold, peaks_type
         device=analysis.match_class.device,
     )
     analysis.unique_solutions = unique_solutions
-    save_match(analysis.filename, entry, frame_num, solution2container(unique_solutions))
+    save_match(analysis.filename, entry, frame_num, solution2container(unique_solutions, fitted_ids=fitted_ids))
     analysis.logger.info(f"Saved matched peaks to file: {analysis.filename}, entry: {entry}, frame: {frame_num}")
 
 
@@ -419,8 +419,10 @@ def run_mlgidmatch_from_file(nexus, entry, frame_num, match_class, threshold, pe
 
     Returns
     -------
-    dict
-        Matching solutions.
+    tuple
+        (unique_solutions, fitted_ids) -- the matching solutions, and the
+        frame's fitted_peaks['id'] values indexed by row position, for
+        translating peak_list to stable ids in solution2container.
     """
     fitted_peaks, q_xy_max, q_z_max = read_fitted_peaks(nexus, entry, frame_num)
     if not peaks_type in ['rings', 'segments']:
@@ -433,7 +435,8 @@ def run_mlgidmatch_from_file(nexus, entry, frame_num, match_class, threshold, pe
     q_2d_roi = np.column_stack((fitted_peaks['q_xy'][mask], fitted_peaks['q_z'][mask]))
     indices_roi = np.where(mask)[0]
     n_total = len(mask)
-    return get_unique_solutions(match_class, peaks_type, threshold, q_xy_max, q_z_max, q_2d_roi, frame_num, intensity_roi, indices_roi, n_total)
+    unique_solutions = get_unique_solutions(match_class, peaks_type, threshold, q_xy_max, q_z_max, q_2d_roi, frame_num, intensity_roi, indices_roi, n_total)
+    return unique_solutions, fitted_peaks['id']
 
 def set_global_indices(unique_solutions, n_total, indices_roi):
     """
@@ -505,7 +508,7 @@ unique_solutions_dtype = np.dtype([
     ('peak_index', object),
 ])
 
-def solution2container(unique_solutions):
+def solution2container(unique_solutions, fitted_ids=None):
     """
     Convert matching solutions into ContainerMatched format.
 
@@ -513,6 +516,14 @@ def solution2container(unique_solutions):
     ----------
     unique_solutions : dict
         Dictionary of matching solutions.
+    fitted_ids : array-like, optional
+        The frame's fitted_peaks['id'] values, indexed by row position
+        (the same position space as `matched_peaks`'s mask). When given,
+        peak_list is translated through this array so it stores each
+        matched peak's stable id instead of its row position -- the id
+        stays valid even if fitted_peaks is later edited (e.g. a peak
+        deleted elsewhere), whereas a position would not. Omitted only by
+        callers with no meaningful id column.
 
     Returns
     -------
@@ -542,6 +553,9 @@ def solution2container(unique_solutions):
             np.where(struct_data['matched_peaks'] != 0)[0].astype(np.int32)
             for struct_data in unique_solution
         ]
+        if fitted_ids is not None:
+            fitted_ids_arr = np.asarray(fitted_ids)
+            indices_list = [fitted_ids_arr[idx].astype(np.int32) for idx in indices_list]
 
         probabilities = [
             np.nanmax(struct_data['matched_peaks'])

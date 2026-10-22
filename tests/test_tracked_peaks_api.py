@@ -152,11 +152,11 @@ def test_remap_tracked_peaks_on_delete_noop_without_table(tmp_path):
     _remap_tracked_peaks_on_delete(str(path), "entry", frame_num=0, peak_id=1)  # must not raise
 
 
-def test_remap_tracked_peaks_on_delete_shifts_and_drops(tmp_path):
-    """Deleting peak_id=1 in frame 0 must: leave entries below it alone,
-    drop the entry that referenced it, and shift entries above it down by
-    one -- mirroring the renumbering delete_peak applies to that frame's
-    detected/fitted 'id' column."""
+def test_remap_tracked_peaks_on_delete_drops_without_shifting(tmp_path):
+    """Deleting peak_id=1 in frame 0 must drop the entry that referenced it
+    and leave every other entry's id untouched -- delete_peak no longer
+    renumbers detected/fitted ids, so an id above the deleted one is still
+    valid as-is and must not be shifted down."""
     import h5py
     from mlgidbase.peak_operations import build_tracked_peaks_dtype, _remap_tracked_peaks_on_delete
     from mlgidbase.pygid_functions import save_tracked_peaks, read_tracked_peaks
@@ -173,7 +173,7 @@ def test_remap_tracked_peaks_on_delete_shifts_and_drops(tmp_path):
     # (different frame entirely, must stay untouched)
     tracked_peaks['frames'][0] = np.array([0, 1], dtype=np.int32)
     tracked_peaks['peak_ids'][0] = np.array([0, 0], dtype=np.int32)
-    # track 1: frame0/id2 (above the deleted id -> shifts to id1)
+    # track 1: frame0/id2 (above the deleted id -> stays id2, no shift)
     tracked_peaks['frames'][1] = np.array([0], dtype=np.int32)
     tracked_peaks['peak_ids'][1] = np.array([2], dtype=np.int32)
     # track 2: frame0/id1 (exactly the deleted peak -> entry dropped)
@@ -189,5 +189,5 @@ def test_remap_tracked_peaks_on_delete_shifts_and_drops(tmp_path):
     result = {int(row['id']): (list(row['frames']), list(row['peak_ids']))
               for row in read_tracked_peaks(str(path), "entry")}
     assert result[0] == ([0, 1], [0, 0])
-    assert result[1] == ([0], [1])
+    assert result[1] == ([0], [2])
     assert result[2] == ([], [])

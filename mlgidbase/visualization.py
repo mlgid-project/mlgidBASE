@@ -309,6 +309,7 @@ def _plot_analysis_results_from_memory(analysis,
             fitted_params['q_xy'] = img_container_fit.qzqxyboxes[1]
             fitted_params["radius"] = img_container_fit.radius
             fitted_params['is_ring'] = img_container_fit.is_ring
+            fitted_params['id'] = img_container_fit.id
         if matched_params['plot']:
             container_matched = analysis.container_match_list[num]
             if container_matched is None:
@@ -508,6 +509,7 @@ def _plot_analysis_results_single_frame(analysis,
         fitted_params['q_xy'] = fitted_peaks['q_xy']
         fitted_params["radius"] = fitted_peaks['radius']
         fitted_params['is_ring'] = fitted_peaks['is_ring']
+        fitted_params['id'] = fitted_peaks['id']
     if matched_params.get('plot', False):
         container_matched = read_matched_data(analysis.filename, entry, frame_num)
         if len(container_matched) == 0:
@@ -838,6 +840,12 @@ def _plot_matched(ax, matched_params, fitted_params):
     amp, rad, rings = map(np.array, (fitted_params["amplitude"], fitted_params["radius"], fitted_params["is_ring"]))
     solution = matched_params['solution']
 
+    # solution's peak lists hold each matched peak's stable fitted_peaks
+    # id (see mlgidmatch_functions.py's solution2container), not its
+    # position among amp/qxy/qz/rad/rings -- translate before indexing.
+    fitted_ids = fitted_params.get('id')
+    id_to_pos = {int(pid): pos for pos, pid in enumerate(fitted_ids)} if fitted_ids is not None else None
+
     intensity_threshold = fitted_params.get('intensity_threshold', 0)
     probability_threshold = matched_params.get('probability_threshold', 0)
 
@@ -862,6 +870,10 @@ def _plot_matched(ax, matched_params, fitted_params):
         if probability < probability_threshold:
             continue
         ind_list = np.asarray(ind_list)
+        if id_to_pos is not None:
+            ind_list = np.array([id_to_pos[i] for i in ind_list.tolist() if i in id_to_pos], dtype=np.int64)
+            if len(ind_list) == 0:
+                continue
 
         ring_idx = ind_list[rings[ind_list]]
         peak_idx = ind_list[~rings[ind_list]]

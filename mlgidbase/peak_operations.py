@@ -36,7 +36,7 @@ def _add_peak(analysis, entry, frame_num,
         q_xy, dq_xy, q_z, dq_z,
         detected_peaks)
 
-    logger.info(f"Peak id#{len(detected_peaks)} has been added")
+    logger.info(f"Peak id#{int(new_peak['id'][0])} has been added")
 
     detected_peaks = np.append(detected_peaks, new_peak)
     # write back to the NeXus dataset
@@ -69,6 +69,11 @@ def _calc_new_peak(angle,
             (q_z / radius * dq_z) ** 2
         )
 
+    # ids are no longer compacted to 0..N-1 on delete, so a gap can leave
+    # an id < len(detected_peaks) unused -- the next free id is one past
+    # the current maximum, not the current count.
+    new_id = int(detected_peaks['id'].max()) + 1 if len(detected_peaks) else 0
+
     return np.array([(
         0.,
         angle,
@@ -86,7 +91,7 @@ def _calc_new_peak(angle,
         False,
         False,
         0,
-        len(detected_peaks)
+        new_id
     )], dtype=detected_peaks.dtype)
 
 
@@ -110,8 +115,11 @@ def _delete_peak_from_memory(analysis, frame_num, peak_id):
 
 def _delete_peak_from_memory_single_frame(analysis, frame_num, pid):
     _delete_peak_from_img_container_detect(analysis, frame_num, pid)
-    _delete_peak_from_img_container_fit(analysis, frame_num, pid)
-    _delete_peak_from_container_match(analysis, frame_num, pid)
+    # container_match's peak_list stores the fit container's stable id
+    # (see solution2container's fitted_ids), not pid's row position, so
+    # capture that id before the row is removed from the fit container.
+    peak_id = _delete_peak_from_img_container_fit(analysis, frame_num, pid)
+    _delete_peak_from_container_match(analysis, frame_num, peak_id if peak_id is not None else pid)
 
 def _delete_peak_from_img_container_detect(analysis, frame_num, pid):
     if not hasattr(analysis, "img_container_detect_list"):
@@ -130,12 +138,18 @@ def _delete_peak_from_img_container_detect(analysis, frame_num, pid):
     ic.qzqxyboxes = np.delete(ic.qzqxyboxes, pid, axis=1)
 
 def _delete_peak_from_img_container_fit(analysis, frame_num, pid):
+    """Deletes the peak at row position pid and returns its stable id
+    (ic.id[pid], captured before that row is removed), or None if there
+    was no fit container for this frame -- callers that need to match
+    this peak up elsewhere by id (e.g. container_match) should use that
+    return value instead of pid."""
     if not hasattr(analysis, "img_container_fit_list"):
         raise ValueError("detection was not performed")
     if frame_num >= len(analysis.img_container_fit_list):
-        return
+        return None
 
     ic = analysis.img_container_fit_list[frame_num]
+    peak_id = int(ic.id[pid])
 
     fields = [
         'amplitude', 'angle', 'angle_width', 'radius', 'radius_width',
@@ -143,16 +157,20 @@ def _delete_peak_from_img_container_fit(analysis, frame_num, pid):
         'visibility', 'score','amplitude_err', 'angle_err',
         'angle_width_err', 'radius_err',
         'radius_width_err', 'theta_err', 'A_err', 'B_err', 'C_err',
+        'id',
     ]
 
     for f in fields:
         setattr(ic, f, np.delete(getattr(ic, f), pid))
     ic.qzqxyboxes = np.delete(ic.qzqxyboxes, pid, axis=1)
     ic.qzqxyboxes_err = np.delete(ic.qzqxyboxes_err, pid, axis=1)
-    ic.id = np.arange(len(ic.radius_width))
+    return peak_id
 
 
-def _delete_peak_from_container_match(analysis, frame_num, pid):
+def _delete_peak_from_container_match(analysis, frame_num, peak_id):
+    """peak_id is the fit container's stable id (see
+    _delete_peak_from_img_container_fit), matching peak_list's own
+    convention -- drop any entry equal to it, no shifting needed."""
     if not hasattr(analysis, "container_match_list"):
         raise ValueError("detection was not performed")
     if frame_num >= len(analysis.container_match_list):
@@ -163,7 +181,7 @@ def _delete_peak_from_container_match(analysis, frame_num, pid):
         sol = ic.results_arrays[i]
         for j in range(len(sol['peak_list'])):
             peak_list = sol['peak_list'][j]
-            sol['peak_list'][j] = np.array([int(x - 1) if x > pid else int(x) for x in peak_list if x != pid])
+            sol['peak_list'][j] = np.array([int(x) for x in peak_list if x != peak_id], dtype=np.int32)
 
 def _delete_peak_from_file(analysis, entry, frame_num, peak_id):
     if entry is None:
@@ -219,7 +237,6 @@ def _delete_peak_single_frame(analysis, entry, frame_num, peak_id):
 def _delete_detected_peak(analysis, entry, frame_num, peak_id):
     detected_peaks = read_detected_peaks(analysis.nexus, entry, frame_num)
     detected_peaks = detected_peaks[detected_peaks['id'] != peak_id]
-    detected_peaks['id'] = np.arange(len(detected_peaks))
     analysis.nexus.change_dataset(f"/{entry}/data/analysis/frame{str(frame_num).zfill(5)}/detected_peaks",
                                   data=detected_peaks,
                                   )
@@ -227,10 +244,8 @@ def _delete_detected_peak(analysis, entry, frame_num, peak_id):
 def _delete_fitted_peaks(analysis, entry, frame_num, peak_id):
     fitted_peaks, _, _ = read_fitted_peaks(analysis.nexus, entry, frame_num)
     fitted_peaks = fitted_peaks[fitted_peaks['id'] != peak_id]
-    fitted_peaks['id'] = np.arange(len(fitted_peaks))
     fitted_peaks_errors = read_fitted_peaks_errors(analysis.nexus, entry, frame_num)
     fitted_peaks_errors = fitted_peaks_errors[fitted_peaks_errors['id'] != peak_id]
-    fitted_peaks_errors['id'] = np.arange(len(fitted_peaks_errors))
 
     analysis.nexus.change_dataset(f"/{entry}/data/analysis/frame{str(frame_num).zfill(5)}/fitted_peaks",
                                   data=fitted_peaks,
@@ -240,10 +255,14 @@ def _delete_fitted_peaks(analysis, entry, frame_num, peak_id):
                                   )
 
 def _delete_matched_peaks(analysis, entry, frame_num, peak_id):
+    """matched_*'s peak_list stores each matched peak's stable fitted_peaks
+    id directly (see mlgidmatch_functions.py's solution2container), so
+    deleting a peak just drops any peak_list entry equal to its id -- no
+    position lookup or shifting needed."""
     res = read_matched_data(analysis.filename, entry, frame_num, convert2sol = False)
     for name, sol in res:
         for i in range(len(sol['peak_list'])):
-            sol['peak_list'][i] = np.array([int(x - 1) if x > peak_id else int(x) for x in sol['peak_list'][i] if x != peak_id])
+            sol['peak_list'][i] = np.array([int(x) for x in sol['peak_list'][i] if x != peak_id], dtype=np.int32)
         analysis.nexus.change_dataset(f"/{entry}/data/analysis/frame{str(frame_num).zfill(5)}/{name}",
                                       data=sol)
 
@@ -251,10 +270,10 @@ def _delete_matched_peaks(analysis, entry, frame_num, peak_id):
 def _remap_tracked_peaks_on_delete(filename, entry, frame_num, peak_id):
     """Keep an already-saved tracked_peaks table consistent with a
     detected/fitted-peak delete: within frame_num, drop the entry that
-    referenced the deleted peak_id and shift every other entry's id down
-    by one if it was above peak_id -- mirroring the renumbering
-    _delete_detected_peak/_delete_fitted_peaks just applied to that
-    frame's id column. No-op if no tracked_peaks table has been saved."""
+    referenced the deleted peak_id. Fitted-peak ids are stable across
+    deletes (delete_peak no longer renumbers them), so every surviving
+    entry's id is still valid as-is -- no shifting needed. No-op if no
+    tracked_peaks table has been saved."""
     try:
         tracked_peaks = read_tracked_peaks(filename, entry)
     except ValueError:
@@ -262,22 +281,12 @@ def _remap_tracked_peaks_on_delete(filename, entry, frame_num, peak_id):
 
     changed = False
     for row in tracked_peaks:
-        new_frames, new_peak_ids = [], []
-        row_changed = False
-        for frame, local_id in zip(row['frames'], row['peak_ids']):
-            frame, local_id = int(frame), int(local_id)
-            if frame == frame_num:
-                if local_id == peak_id:
-                    row_changed = True
-                    continue
-                if local_id > peak_id:
-                    local_id -= 1
-                    row_changed = True
-            new_frames.append(frame)
-            new_peak_ids.append(local_id)
-        if row_changed:
-            row['frames'] = np.asarray(new_frames, dtype=np.int32)
-            row['peak_ids'] = np.asarray(new_peak_ids, dtype=np.int32)
+        frames_arr = np.asarray(row['frames'])
+        peak_ids_arr = np.asarray(row['peak_ids'])
+        keep = ~((frames_arr == frame_num) & (peak_ids_arr == peak_id))
+        if not keep.all():
+            row['frames'] = frames_arr[keep].astype(np.int32)
+            row['peak_ids'] = peak_ids_arr[keep].astype(np.int32)
             changed = True
 
     if changed:

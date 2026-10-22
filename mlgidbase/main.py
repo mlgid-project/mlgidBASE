@@ -194,7 +194,7 @@ class mlgidBASE:
         _run_detection(self, entry, frame_num, config_detect, model_type)
 
     def run_fitting(self, entry=None, frame_num=None, crit_angle=0,
-                clustering_distance_peaks=10, clustering_distance_rings=10,
+                clustering_distance_peaks=2, clustering_distance_rings=2,
                 clustering_extend=2, theta_fixed = True, use_pool=False, debug=False):
         """
         Fit detected peaks to clusters for structural analysis.
